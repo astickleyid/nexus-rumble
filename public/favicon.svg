@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Nexus Rumble">
+  <rect width="32" height="32" rx="6" fill="#07091a"/>
+  <path fill="#2ee6ff" d="M5.5 23.5 13 7.2h3.6L13.2 14.6h5L9.2 23.5z"/>
+  <path fill="#ff6a2a" d="M26.5 23.5 19 7.2h-3.6L18.8 14.6h-5L22.8 23.5z"/>
+  <path fill="#e8f4ff" d="M14.4 13.2h3.2L16 16.6z"/>
+</svg>

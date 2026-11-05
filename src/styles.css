@@ -1,0 +1,166 @@
+@import url("https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Sora:wght@400;500;600&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #07091a;
+  --color-bg-2: #10182e;
+  --color-surface: #141b31;
+  --color-fg: #e8f4ff;
+  --color-muted: #8aa0c8;
+  --color-primary: #2ee6ff;
+  --color-accent: #ff6a2a;
+  --color-border: #24304c;
+  --color-gold: #ffd56a;
+  --font-display: "Chakra Petch", "Arial Narrow", sans-serif;
+  --font-sans: "Sora", system-ui, sans-serif;
+  --radius: 0.75rem;
+}
+
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  html,
+  body {
+    height: 100%;
+    background: var(--color-bg);
+    color: var(--color-fg);
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    overflow: hidden;
+  }
+}
+
+.game-root {
+  height: 100dvh;
+  width: 100%;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  background: var(--color-bg);
+  position: relative;
+}
+
+.menu-scroll {
+  height: 100%;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+.fight-layer {
+  touch-action: none;
+}
+
+.face-left {
+  transform: scaleX(-1);
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.hp-track {
+  position: relative;
+  height: 0.85rem;
+  background: #070b16;
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+  transform: skewX(-14deg);
+}
+
+.hp-lag,
+.hp-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  transform-origin: left center;
+}
+
+.hp-lag {
+  background: var(--color-gold);
+}
+
+.hp-fill {
+  background: linear-gradient(90deg, #129aaf, var(--color-primary));
+}
+
+.hp-lag.rival,
+.hp-fill.rival {
+  inset: 0 0 0 auto;
+  transform-origin: right center;
+}
+
+.hp-fill.rival {
+  background: linear-gradient(90deg, var(--color-accent), #ffb080);
+}
+
+.meter {
+  height: 0.35rem;
+  background: #070b16;
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+  transform: skewX(-14deg);
+}
+
+.meter > span {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  background: var(--color-primary);
+}
+
+.meter.rival > span {
+  transform-origin: right center;
+  margin-left: auto;
+  background: var(--color-accent);
+}
+
+.meter.is-ready > span {
+  background: var(--color-gold);
+  animation: meter-pulse 0.7s ease-in-out infinite;
+}
+
+@keyframes meter-pulse {
+  50% {
+    filter: brightness(1.45);
+  }
+}
+
+.pad-btn {
+  min-width: 3.25rem;
+  min-height: 3.25rem;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 82%, transparent);
+  color: var(--color-fg);
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border-radius: 0.7rem;
+  backdrop-filter: blur(6px);
+}
+
+.pad-btn:active {
+  background: color-mix(in srgb, var(--color-primary) 28%, var(--color-surface));
+  border-color: var(--color-primary);
+}
+
+.pad-btn.hot {
+  border-color: var(--color-accent);
+}
+
+.pad-btn.ready {
+  border-color: var(--color-gold);
+  color: var(--color-gold);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meter.is-ready > span {
+    animation: none;
+  }
+}
