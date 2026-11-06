@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Droplets, Flame, Leaf, Volume2, VolumeX, Zap } from "lucide-react";
 import { loadArt, type Art } from "@/game/art";
 import { isMuted, setMuted, sfx, unlockAudio } from "@/game/audio";
-import { advance, drawCircuit, foeOf, type Circuit } from "@/game/circuit";
+import { advance, drawCircuit, foeOf, mapOf, type Circuit } from "@/game/circuit";
 import { createCamera, render, updateCamera, type Camera } from "@/game/draw";
 import { BEAST_MAP, BEASTS, matchupLine, type BeastId } from "@/game/roster";
-import { EMPTY_PAD, MatchSim, STAGE, type Pad } from "@/game/sim";
+import { EMPTY_PAD, MatchSim, type Pad } from "@/game/sim";
+import { STAGE_MAP, type StageId } from "@/game/stages";
 
 type Save = { wins: number; losses: number; titles: number; by: Partial<Record<BeastId, number>> };
 type Screen = "title" | "roster" | "bracket" | "fight";
@@ -107,6 +108,7 @@ export function Rumble() {
           key={bout}
           you={you}
           rival={foe}
+          stageId={circuit ? mapOf(circuit) : "spire"}
           art={art}
           muted={muted}
           stakes={circuit?.round === "final" ? "final" : "semi"}
@@ -135,7 +137,7 @@ function Title({ save, onEnter }: { save: Save; onEnter: () => void }) {
         NEXUS
         <span className="block text-accent">RUMBLE</span>
       </h1>
-      <p className="max-w-md text-base text-muted">Four-beast circuit. Win your semi, then the final. Three stocks a match.</p>
+      <p className="max-w-md text-base text-muted">Eight beasts. Four rings. Win the semi, then the final.</p>
       <div className="grid w-full grid-cols-4 gap-2">
         {BEASTS.map((b) => (
           <img key={b.id} src={`/sprites/${b.id}/frame-1.png`} alt={b.name} className="h-24 w-full object-contain sm:h-36" />
@@ -145,7 +147,7 @@ function Title({ save, onEnter }: { save: Save; onEnter: () => void }) {
         Enter the circuit
       </button>
       <p className="text-sm text-muted">
-        {played > 0 ? `${save.titles} titles · ${save.wins} wins · ${save.losses} losses` : "Pick one beast. The other three fill the bracket."}
+        {played > 0 ? `${save.titles} titles · ${save.wins} wins · ${save.losses} losses` : "Pick one beast. Three others draw into your bracket."}
       </p>
     </div>
   );
@@ -262,6 +264,11 @@ function Bracket({
         </button>
       )}
       {live ? <p className="text-center text-xs text-muted">{matchupLine(circuit.you, foe)}</p> : null}
+      <p className="text-center text-sm text-muted">
+        {STAGE_MAP[circuit.round === "final" || circuit.round === "champion" || circuit.fell === "final" ? circuit.maps.final : circuit.maps.semi].name}
+        {" · "}
+        {STAGE_MAP[circuit.round === "final" || circuit.round === "champion" || circuit.fell === "final" ? circuit.maps.final : circuit.maps.semi].blurb}
+      </p>
     </div>
   );
 }
@@ -294,7 +301,7 @@ function Picker({
   return (
     <section>
       <h3 className={`font-display mb-2 text-sm tracking-[0.2em] ${tone === "you" ? "text-primary" : "text-accent"}`}>{label}</h3>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-4 gap-2">
         {BEASTS.map((b) => {
           const on = b.id === selected;
           const Icon = ICONS[b.element];
@@ -305,7 +312,7 @@ function Picker({
               onClick={() => onPick(b.id)}
               className={`flex min-h-11 flex-col items-center gap-1 px-2 py-2 ${on ? "opacity-100" : "opacity-55"}`}
             >
-              <img src={`/sprites/${b.id}/frame-1.png`} alt="" className={`h-24 object-contain ${flip ? "face-left" : ""} ${on ? "scale-110" : ""}`} />
+              <img src={`/sprites/${b.id}/frame-1.png`} alt="" className={`h-16 object-contain sm:h-24 ${flip ? "face-left" : ""} ${on ? "scale-110" : ""}`} />
               <span className={`font-display text-sm ${on ? (tone === "you" ? "text-primary" : "text-accent") : "text-fg"}`}>{b.name}</span>
               <span className="flex items-center gap-1 text-xs text-muted">
                 <Icon className="size-3.5" aria-hidden="true" />
@@ -322,6 +329,7 @@ function Picker({
 function Fight({
   you,
   rival,
+  stageId,
   art,
   muted,
   stakes,
@@ -331,6 +339,7 @@ function Fight({
 }: {
   you: BeastId;
   rival: BeastId;
+  stageId: StageId;
   art: Art | null;
   muted: boolean;
   stakes: "semi" | "final";
@@ -378,7 +387,7 @@ function Fight({
     if (!canvas || !wrap) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const sim = new MatchSim(you, rival);
+    const sim = new MatchSim(you, rival, stageId);
     simRef.current = sim;
     const cam = camRef.current;
     let raf = 0;
@@ -498,7 +507,7 @@ function Fight({
       delete debug.__rumbleDebug;
     };
     // shake is read each frame via closure; restarting the loop on toggle is fine
-  }, [art, you, rival, shake]);
+  }, [art, you, rival, stageId, shake]);
 
   function paintHud(sim: MatchSim) {
     const secs = Math.ceil(sim.time);
@@ -515,7 +524,8 @@ function Fight({
       const pct = Math.round(f.dmg);
       if (hpRefs[i].current) {
         hpRefs[i].current.textContent = `${pct}%`;
-        const off = f.respawn <= 0 && (f.x < STAGE.l || f.x > STAGE.r || f.y < -30);
+        const span = { l: Math.min(...sim.stage.solids.map((s) => s.l)), r: Math.max(...sim.stage.solids.map((s) => s.r)) };
+        const off = f.respawn <= 0 && (f.x < span.l || f.x > span.r || f.y < -30);
         hpRefs[i].current.style.color = off || pct > 100 ? "#ff6a2a" : pct > 50 ? "#ffd56a" : "#e8f4ff";
       }
       if (meterRefs[i].current) meterRefs[i].current.style.transform = `scaleX(${meter})`;
@@ -537,6 +547,7 @@ function Fight({
           <Bar name={youBeast.name} tag="YOU" tone="you" stocks={score[0]} pctRef={hpRefs[0]} meterRef={meterRefs[0]} trackRef={meterTrack[0]} />
           <div className="flex flex-col items-center pt-1">
             <span className="font-display text-[10px] tracking-[0.22em] text-gold">{stakes === "final" ? "FINAL" : "SEMI"}</span>
+            <span className="text-[10px] tracking-wide text-muted">{STAGE_MAP[stageId].name}</span>
             <span ref={timeRef} className="font-display text-2xl tracking-widest text-fg">
               99
             </span>

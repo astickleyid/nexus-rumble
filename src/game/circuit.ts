@@ -1,4 +1,5 @@
 import { advantage, BEAST_MAP, BEASTS, type BeastId } from "@/game/roster";
+import { pickMaps, type StageId } from "@/game/stages";
 
 export type Round = "semi" | "final" | "champion" | "out";
 
@@ -10,6 +11,7 @@ export type Circuit = {
   otherLine: string;
   round: Round;
   fell: "semi" | "final" | null;
+  maps: { semi: StageId; final: StageId };
 };
 
 function shuffle<T>(list: T[]): T[] {
@@ -47,7 +49,13 @@ export function drawCircuit(you: BeastId): Circuit {
     otherLine: decided.line,
     round: "semi",
     fell: null,
+    maps: pickMaps(),
   };
+}
+
+export function mapOf(c: Circuit): StageId {
+  if (c.round === "final" || c.round === "champion" || c.fell === "final") return c.maps.final;
+  return c.maps.semi;
 }
 
 export function foeOf(c: Circuit): BeastId {

@@ -1,4 +1,4 @@
-import type { BeastId } from "@/game/roster";
+import { BEASTS, type BeastId } from "@/game/roster";
 
 export type Frame = {
   img: HTMLImageElement;
@@ -14,7 +14,7 @@ export type Art = {
   bolt: Frame[];
 };
 
-const IDS: BeastId[] = ["voltusk", "pyrelon", "aqualith", "thornox"];
+const IDS: BeastId[] = BEASTS.map((b) => b.id);
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {

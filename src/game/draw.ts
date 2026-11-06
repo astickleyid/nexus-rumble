@@ -1,6 +1,7 @@
 import type { Art, Frame } from "@/game/art";
 import type { Fighter } from "@/game/sim";
-import { BLAST, MatchSim, PLATS, STAGE, WORLD_W, type Pickup } from "@/game/sim";
+import { MatchSim, type Pickup } from "@/game/sim";
+import { STAGE_MAP, stageSpan, type Stage } from "@/game/stages";
 
 export type Camera = { x: number; y: number; viewW: number };
 
@@ -12,18 +13,20 @@ const BONE = "#e8f4ff";
 
 let scratch: HTMLCanvasElement | null = null;
 const motes = Array.from({ length: 28 }, () => ({
-  x: Math.random() * WORLD_W,
+  x: Math.random() * 3200,
   y: 40 + Math.random() * 280,
   s: 1 + Math.random() * 2.2,
   v: 12 + Math.random() * 28,
 }));
 
 export function createCamera(): Camera {
-  return { x: (STAGE.l + STAGE.r) / 2, y: 200, viewW: 1680 };
+  const span = stageSpan(STAGE_MAP.spire);
+  return { x: (span.l + span.r) / 2, y: 200, viewW: 1680 };
 }
 
 export function updateCamera(cam: Camera, sim: MatchSim, cssW: number, cssH: number, dt: number) {
   const [a, b] = sim.p;
+  const stage = sim.stage;
   const aspect = cssW / Math.max(1, cssH);
   const phone = aspect < 0.72;
   const padX = phone ? 280 : aspect < 1.05 ? 760 : 1040;
@@ -37,8 +40,8 @@ export function updateCamera(cam: Camera, sim: MatchSim, cssW: number, cssH: num
   let x = (a.x + b.x) / 2;
   let y = Math.max((a.y + b.y) / 2, 180);
   if (phone) y -= (viewW / aspect) * 0.13;
-  x = Math.min(WORLD_W - 80, Math.max(80, x));
-  y = Math.min(BLAST.t - 220, Math.max(BLAST.b + 240, y));
+  x = Math.min(stage.worldW - 80, Math.max(80, x));
+  y = Math.min(stage.blast.t - 220, Math.max(stage.blast.b + 240, y));
   const follow = 1 - Math.exp(-5.2 * dt);
   const zoom = 1 - Math.exp(-3.4 * dt);
   cam.x += (x - cam.x) * follow;
@@ -67,28 +70,29 @@ export function render(
   const sx = (x: number) => (x - left) * scale + shx;
   const sy = (y: number) => h - (y - bottom) * scale + shy;
 
+  const stage = sim.stage;
+  const span = stageSpan(stage);
   ctx.clearRect(0, 0, w, h);
   const sky = ctx.createLinearGradient(0, 0, 0, h);
-  sky.addColorStop(0, "#050712");
-  sky.addColorStop(0.55, BG);
-  sky.addColorStop(1, BG2);
+  sky.addColorStop(0, stage.sky[0]);
+  sky.addColorStop(0.55, stage.sky[1]);
+  sky.addColorStop(1, stage.sky[0]);
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, w, h);
 
   for (const m of motes) {
     m.x += m.v * 0.016;
-    if (m.x > WORLD_W) m.x = 0;
+    if (m.x > stage.worldW) m.x = 0;
     ctx.globalAlpha = 0.35;
-    ctx.fillStyle = CYAN;
+    ctx.fillStyle = stage.mote;
     ctx.fillRect(sx(m.x * 0.35 + 200), sy(m.y) - h * 0.2, m.s, m.s);
   }
   ctx.globalAlpha = 1;
 
-  drawMonolith(ctx, sx(STAGE.l - 220), sy(0), 70 * scale, 260 * scale, 0.28);
-  drawMonolith(ctx, sx(STAGE.r + 220), sy(0), 80 * scale, 300 * scale, 0.22);
-  drawAbyss(ctx, sx, sy, scale, w, h);
-
-  drawIsland(ctx, sx, sy, scale);
+  drawMonolith(ctx, sx(span.l - 220), sy(0), 70 * scale, 260 * scale, stage.mote);
+  drawMonolith(ctx, sx(span.r + 220), sy(0), 80 * scale, 300 * scale, stage.mote);
+  drawAbyss(ctx, sx, sy, scale, w, h, stage, span);
+  drawIsland(ctx, sx, sy, scale, stage);
   for (const it of sim.items) drawItem(ctx, it, sx, sy, scale);
 
   const order = [...sim.p].sort((a, b) => (a.action === "hit" || a.action === "ko" ? -1 : 1) - (b.action === "hit" || b.action === "ko" ? -1 : 1));
@@ -122,26 +126,30 @@ function drawAbyss(
   scale: number,
   w: number,
   h: number,
+  stage: Stage,
+  span: { l: number; r: number },
 ) {
-  const veil = (x0: number, x1: number, color: string) => {
+  const veil = (x0: number, x1: number) => {
     const g = ctx.createLinearGradient(sx(x0), 0, sx(x1), 0);
     g.addColorStop(0, "rgba(0,0,0,0)");
-    g.addColorStop(1, color);
+    g.addColorStop(1, stage.pit);
     ctx.fillStyle = g;
     ctx.fillRect(Math.min(sx(x0), sx(x1)), 0, Math.abs(sx(x1) - sx(x0)), h);
   };
-  veil(STAGE.l, BLAST.l, "rgba(255,60,40,0.3)");
-  veil(STAGE.r, BLAST.r, "rgba(255,60,40,0.3)");
-  const pit = ctx.createLinearGradient(0, sy(40), 0, sy(BLAST.b));
-  pit.addColorStop(0, "rgba(255,80,40,0)");
-  pit.addColorStop(1, "rgba(255,50,20,0.22)");
+  veil(span.l, stage.blast.l);
+  veil(span.r, stage.blast.r);
+  const pit = ctx.createLinearGradient(0, sy(40), 0, sy(stage.blast.b));
+  pit.addColorStop(0, "rgba(0,0,0,0)");
+  pit.addColorStop(1, stage.pit);
   ctx.fillStyle = pit;
-  ctx.fillRect(0, sy(40), w, sy(BLAST.b) - sy(40));
+  ctx.fillRect(0, sy(40), w, sy(stage.blast.b) - sy(40));
   ctx.globalAlpha = 0.55;
-  ctx.fillStyle = EMBER;
+  ctx.fillStyle = stage.lip;
   const tick = 18 * scale;
-  for (let x = STAGE.l; x <= STAGE.r; x += 90) {
-    ctx.fillRect(sx(x) - 1, sy(0) - tick, 2, tick);
+  for (const solid of stage.solids) {
+    for (let x = solid.l; x <= solid.r; x += 90) {
+      ctx.fillRect(sx(x) - 1, sy(0) - tick, 2, tick);
+    }
   }
   ctx.globalAlpha = 1;
 }
@@ -151,13 +159,14 @@ function drawIsland(
   sx: (x: number) => number,
   sy: (y: number) => number,
   scale: number,
+  stage: Stage,
 ) {
   const slab = (l: number, r: number, y: number, thick: number, main: boolean) => {
     const x0 = sx(l);
     const x1 = sx(r);
     const top = sy(y);
     const bot = sy(y - thick);
-    ctx.fillStyle = main ? "#141c34" : "#10182c";
+    ctx.fillStyle = main ? stage.slab : "#10182c";
     ctx.beginPath();
     ctx.moveTo(x0, top);
     ctx.lineTo(x1, top);
@@ -165,7 +174,7 @@ function drawIsland(
     ctx.lineTo(x0 + (main ? 22 : 10) * scale, bot);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = main ? EMBER : CYAN;
+    ctx.strokeStyle = stage.lip;
     ctx.globalAlpha = main ? 0.9 : 0.55;
     ctx.lineWidth = main ? 3 : 2;
     ctx.beginPath();
@@ -173,10 +182,9 @@ function drawIsland(
     ctx.lineTo(x1, top);
     ctx.stroke();
     ctx.globalAlpha = 0.18;
-    ctx.strokeStyle = CYAN;
+    ctx.strokeStyle = stage.mote;
     ctx.lineWidth = 1;
-    const step = 70;
-    for (let x = l; x < r; x += step) {
+    for (let x = l; x < r; x += 70) {
       ctx.beginPath();
       ctx.moveTo(sx(x), top);
       ctx.lineTo(sx(x), bot);
@@ -184,12 +192,13 @@ function drawIsland(
     }
     ctx.globalAlpha = 1;
   };
-  slab(STAGE.l, STAGE.r, 0, 78, true);
-  const mid = sx((STAGE.l + STAGE.r) / 2);
+  for (const solid of stage.solids) slab(solid.l, solid.r, 0, 78, true);
+  const span = stageSpan(stage);
+  const mid = sx((span.l + span.r) / 2);
   const top = sy(0);
   ctx.save();
   ctx.translate(mid, top);
-  ctx.fillStyle = "#1a2748";
+  ctx.fillStyle = stage.slab;
   ctx.beginPath();
   ctx.moveTo(0, -16 * scale);
   ctx.lineTo(18 * scale, 0);
@@ -197,11 +206,11 @@ function drawIsland(
   ctx.lineTo(-18 * scale, 0);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = CYAN;
+  ctx.strokeStyle = stage.lip;
   ctx.globalAlpha = 0.8;
   ctx.stroke();
   ctx.restore();
-  for (const p of PLATS) slab(p.l, p.r, p.y, 22, false);
+  for (const p of stage.plats) slab(p.l, p.r, p.y, 22, false);
 }
 
 function drawItem(
@@ -223,7 +232,7 @@ function drawItem(
   ctx.restore();
 }
 
-function drawMonolith(ctx: CanvasRenderingContext2D, x: number, floor: number, w: number, h: number, glow: number) {
+function drawMonolith(ctx: CanvasRenderingContext2D, x: number, floor: number, w: number, h: number, color: string) {
   ctx.fillStyle = "#12182c";
   ctx.beginPath();
   ctx.moveTo(x - w * 0.4, floor);
@@ -232,10 +241,13 @@ function drawMonolith(ctx: CanvasRenderingContext2D, x: number, floor: number, w
   ctx.lineTo(x + w * 0.4, floor);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = `rgba(46,230,255,${glow})`;
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = 0.45;
   ctx.stroke();
-  ctx.fillStyle = `rgba(46,230,255,${glow})`;
+  ctx.globalAlpha = 0.7;
+  ctx.fillStyle = color;
   ctx.fillRect(x - 2, floor - h * 0.72, 4, h * 0.4);
+  ctx.globalAlpha = 1;
 }
 
 function pickFrame(f: Fighter, n: number) {

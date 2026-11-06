@@ -1,17 +1,7 @@
 import { sfx } from "@/game/audio";
 import { advantage, BEAST_MAP, type Beast, type BeastId, type Move } from "@/game/roster";
+import { STAGE_MAP, stageSpan, type Stage, type StageId } from "@/game/stages";
 
-export const WORLD_W = 2700;
-export const STAGE = { l: 320, r: 2380 };
-export const PLATS = [
-  { l: 500, r: 900, y: 155 },
-  { l: 1800, r: 2200, y: 155 },
-  { l: 960, r: 1280, y: 240 },
-  { l: 1420, r: 1740, y: 240 },
-  { l: 1140, r: 1560, y: 385 },
-];
-export const BLAST = { l: -560, r: 3260, b: -740, t: 1860 };
-const SPAWN_X = [820, 1880] as const;
 const GRAVITY = 2000;
 const STOCKS = 3;
 
@@ -138,16 +128,12 @@ type PendingHit = {
 
 const emptyBuf = (): Buf => ({ light: 0, heavy: 0, special: 0, burst: 0, jump: 0 });
 
-function plats(): Plat[] {
-  return [{ l: STAGE.l, r: STAGE.r, y: 0, soft: false }, ...PLATS.map((p) => ({ l: p.l, r: p.r, y: p.y, soft: true }))];
-}
-
 function makeFighter(slot: 0 | 1, id: BeastId): Fighter {
   const beast = BEAST_MAP[id];
   return {
     slot,
     beast,
-    x: SPAWN_X[slot],
+    x: 0,
     y: 0,
     vx: 0,
     vy: 0,
@@ -216,12 +202,21 @@ export class MatchSim {
   itemT = 2.5;
   youId: BeastId;
   rivalId: BeastId;
+  stage: Stage;
 
-  constructor(you: BeastId, rival: BeastId) {
+  constructor(you: BeastId, rival: BeastId, stageId: StageId = "spire") {
     this.youId = you;
     this.rivalId = rival;
+    this.stage = STAGE_MAP[stageId];
     this.p = [makeFighter(0, you), makeFighter(1, rival)];
     this.beginIntro();
+  }
+
+  private surfaces(): Plat[] {
+    return [
+      ...this.stage.solids.map((s) => ({ l: s.l, r: s.r, y: 0, soft: false })),
+      ...this.stage.plats.map((p) => ({ l: p.l, r: p.r, y: p.y, soft: true })),
+    ];
   }
 
   get score(): [number, number] {
@@ -256,8 +251,8 @@ export class MatchSim {
       f.meter = 0;
       f.burst = 0;
     }
-    a.x = SPAWN_X[0];
-    b.x = SPAWN_X[1];
+    a.x = this.stage.spawn[0];
+    b.x = this.stage.spawn[1];
     a.facing = 1;
     b.facing = -1;
     this.shots = [];
@@ -372,11 +367,22 @@ export class MatchSim {
     const pad = this.aiPad;
     pad.left = pad.right = pad.jump = pad.block = pad.light = pad.heavy = pad.special = pad.burst = false;
     if (ai.respawn > 0 || this.phase !== "fight") return;
-    const onStage = ai.x > STAGE.l - 10 && ai.x < STAGE.r + 10 && ai.y > -30;
+    const span = stageSpan(this.stage);
+    const onStage = this.stage.solids.some((s) => ai.x >= s.l - 16 && ai.x <= s.r + 16) && ai.y > -30;
     if (!onStage) {
-      if (ai.x < (STAGE.l + STAGE.r) / 2) pad.right = true;
+      let home = span.l;
+      let best = Infinity;
+      for (const s of this.stage.solids) {
+        const mid = (s.l + s.r) / 2;
+        const d = Math.abs(ai.x - mid);
+        if (d < best) {
+          best = d;
+          home = mid;
+        }
+      }
+      if (ai.x < home) pad.right = true;
       else pad.left = true;
-      if (ai.vy < 120 && ai.jumps > 0) pad.jump = true;
+      if (ai.vy < 160 && ai.jumps > 0) pad.jump = true;
       return;
     }
     if (ai.action === "hit") {
@@ -589,7 +595,7 @@ export class MatchSim {
 
       let landed = false;
       if (f.vy <= 0) {
-        for (const p of plats()) {
+        for (const p of this.surfaces()) {
           if (f.drop && p.soft) continue;
           const onX = f.x >= p.l && f.x <= p.r;
           if (!onX) continue;
@@ -637,7 +643,7 @@ export class MatchSim {
         }
       }
 
-      if (f.y < BLAST.b || f.y > BLAST.t || f.x < BLAST.l || f.x > BLAST.r) this.ringOut(f);
+      if (f.y < this.stage.blast.b || f.y > this.stage.blast.t || f.x < this.stage.blast.l || f.x > this.stage.blast.r) this.ringOut(f);
     }
 
     for (const s of this.shots) {
@@ -647,13 +653,13 @@ export class MatchSim {
       s.y += s.vy * dt;
       if (s.form === "bolt") s.y += Math.sin(s.life * 18) * 10 * dt;
       s.life -= dt;
-      if (s.life <= 0 || s.x < BLAST.l || s.x > BLAST.r || (s.grav > 0 && s.y < 8)) s.alive = false;
+      if (s.life <= 0 || s.x < this.stage.blast.l || s.x > this.stage.blast.r || (s.grav > 0 && s.y < 8)) s.alive = false;
     }
     this.shots = this.shots.filter((s) => s.alive);
   }
 
   private place(f: Fighter) {
-    f.x = SPAWN_X[f.slot];
+    f.x = this.stage.spawn[f.slot];
     f.y = 12;
     f.vx = 0;
     f.vy = 0;
@@ -725,8 +731,11 @@ export class MatchSim {
   private spawnItem() {
     const roll = Math.random();
     const kind: Pickup["kind"] = roll < 0.4 ? "heal" : roll < 0.7 ? "meter" : "bomb";
+    const pad = 90;
+    const solid = this.stage.solids[Math.floor(Math.random() * this.stage.solids.length)] ?? this.stage.solids[0]!;
+    const span = Math.max(40, solid.r - solid.l - pad * 2);
     this.items.push({
-      x: STAGE.l + 120 + Math.random() * (STAGE.r - STAGE.l - 240),
+      x: solid.l + pad + Math.random() * span,
       y: 560,
       vy: -40,
       kind,
@@ -742,7 +751,7 @@ export class MatchSim {
       it.y += it.vy * dt;
       const prev = it.y - it.vy * dt;
       if (it.vy < 0) {
-        for (const p of plats()) {
+        for (const p of this.surfaces()) {
           if (it.x < p.l || it.x > p.r) continue;
           if (prev >= p.y && it.y <= p.y) {
             it.y = p.y + 28;
