@@ -19,24 +19,26 @@ const motes = Array.from({ length: 28 }, () => ({
 }));
 
 export function createCamera(): Camera {
-  return { x: 850, y: 180, viewW: 980 };
+  return { x: (STAGE.l + STAGE.r) / 2, y: 200, viewW: 1680 };
 }
 
 export function updateCamera(cam: Camera, sim: MatchSim, cssW: number, cssH: number, dt: number) {
   const [a, b] = sim.p;
   const aspect = cssW / Math.max(1, cssH);
-  const padX = aspect < 0.75 ? 200 : aspect < 0.9 ? 300 : 500;
-  const padY = aspect < 0.75 ? 280 : aspect < 0.9 ? 340 : 420;
+  const phone = aspect < 0.72;
+  const padX = phone ? 280 : aspect < 1.05 ? 760 : 1040;
+  const padY = phone ? 340 : aspect < 1.05 ? 540 : 620;
   const spanX = Math.abs(a.x - b.x) + padX;
   const spanY = Math.abs(a.y - b.y) + padY;
   let viewW = Math.max(spanX, spanY * aspect);
-  const minW = Math.max(440, Math.min(900, 600 * aspect));
-  viewW = Math.min(1720, Math.max(minW, viewW));
+  const minW = phone ? 660 : aspect < 1.05 ? 1240 : 1720;
+  const maxW = phone ? 840 : 3000;
+  viewW = Math.min(maxW, Math.max(minW, viewW));
   let x = (a.x + b.x) / 2;
-  let y = Math.max((a.y + b.y) / 2, 140);
-  const half = viewW / 2;
-  x = Math.min(WORLD_W - 40, Math.max(40, x));
-  y = Math.min(BLAST.t - 160, Math.max(BLAST.b + 160, y));
+  let y = Math.max((a.y + b.y) / 2, 180);
+  if (phone) y -= (viewW / aspect) * 0.13;
+  x = Math.min(WORLD_W - 80, Math.max(80, x));
+  y = Math.min(BLAST.t - 220, Math.max(BLAST.b + 240, y));
   const follow = 1 - Math.exp(-5.2 * dt);
   const zoom = 1 - Math.exp(-3.4 * dt);
   cam.x += (x - cam.x) * follow;
@@ -82,8 +84,8 @@ export function render(
   }
   ctx.globalAlpha = 1;
 
-  drawMonolith(ctx, sx(180), sy(0), 70 * scale, 260 * scale, 0.28);
-  drawMonolith(ctx, sx(1500), sy(0), 80 * scale, 300 * scale, 0.22);
+  drawMonolith(ctx, sx(STAGE.l - 220), sy(0), 70 * scale, 260 * scale, 0.28);
+  drawMonolith(ctx, sx(STAGE.r + 220), sy(0), 80 * scale, 300 * scale, 0.22);
   drawAbyss(ctx, sx, sy, scale, w, h);
 
   drawIsland(ctx, sx, sy, scale);

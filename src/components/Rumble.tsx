@@ -237,6 +237,9 @@ function Fight({
   const camRef = useRef<Camera>(createCamera());
   const keyRef = useRef(blankPad());
   const touchRef = useRef(blankPad());
+  const buttonRef = useRef(blankPad());
+  const stickRef = useRef({ left: false, right: false, jump: false, block: false });
+  const evolveRef = useRef<HTMLButtonElement>(null);
   const recorded = useRef(false);
   const recordRef = useRef(onRecord);
   recordRef.current = onRecord;
@@ -362,6 +365,7 @@ function Fight({
         stocks: number[];
         jumps: number;
         items: number;
+        viewW: number;
         lastFall: { who: number; dmg: number; x: number; y: number } | null;
       };
     };
@@ -375,6 +379,7 @@ function Fight({
       stocks: [sim.p[0].stocks, sim.p[1].stocks],
       jumps: sim.p[0].jumps,
       items: sim.items.length,
+      viewW: cam.viewW,
       lastFall: sim.lastFall,
     });
 
@@ -409,6 +414,8 @@ function Fight({
       if (meterRefs[i].current) meterRefs[i].current.style.transform = `scaleX(${meter})`;
       meterTrack[i].current?.classList.toggle("is-ready", f.meter >= 100 && f.burst <= 0);
     });
+    const you = sim.p[0];
+    evolveRef.current?.classList.toggle("is-ready", !!you && you.meter >= 100 && you.burst <= 0);
   }
 
   const youBeast = BEASTS.find((b) => b.id === you)!;
@@ -430,12 +437,18 @@ function Fight({
         <div ref={calloutRef} className="font-display absolute inset-x-0 top-[42%] text-center text-xl tracking-[0.22em] text-gold" />
       </div>
 
-      <div className="absolute top-16 right-3 flex gap-2">
-        <button type="button" onClick={onMute} className="pointer-events-auto min-h-11 min-w-11 border border-border bg-surface text-fg" aria-label={muted ? "Unmute" : "Mute"}>
+      <div className="absolute left-1/2 top-[5.4rem] z-10 flex -translate-x-1/2 gap-2">
+        <button type="button" onClick={onMute} className="icon-btn" aria-label={muted ? "Unmute" : "Mute"}>
           {muted || isMuted() ? <VolumeX className="mx-auto size-4" /> : <Volume2 className="mx-auto size-4" />}
         </button>
-        <button type="button" onClick={() => setShake((v) => !v)} className="font-display min-h-11 border border-border bg-surface px-2 text-xs text-muted">
-          {shake ? "Shake on" : "Shake off"}
+        <button
+          type="button"
+          onClick={() => setShake((v) => !v)}
+          className="icon-btn px-2"
+          aria-pressed={shake}
+          aria-label={shake ? "Turn screen shake off" : "Turn screen shake on"}
+        >
+          {shake ? "FX" : "FX off"}
         </button>
       </div>
 
@@ -446,24 +459,23 @@ function Fight({
       )}
 
       {touchUi && art && (
-        <div className="absolute inset-x-0 bottom-2 flex items-end justify-between px-2">
-          <div className="grid grid-cols-2 gap-2">
-            <Touch label="Left" on={(d) => setTouch("left", d)} />
-            <Touch label="Right" on={(d) => setTouch("right", d)} />
-            <Touch label="Jump" on={(d) => setTouch("jump", d)} />
-            <Touch label="Shield" on={(d) => setTouch("block", d)} />
+        <div className="touch-dock">
+          <div className="move-col">
+            <Stick onChange={setStick} />
+            <Act label="Shield" sub="hold · drop" kind="shield" on={(d) => setButton("block", d)} />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Touch label="Light" hot on={(d) => setTouch("light", d)} />
-            <Touch label="Launch" hot on={(d) => setTouch("heavy", d)} />
-            <Touch label="Bolt" hot on={(d) => setTouch("special", d)} />
-            <Touch label="Digivolve" ready on={(d) => setTouch("burst", d)} />
+          <div className="action-pad" role="group" aria-label="Attacks">
+            <Act label="Hit" sub="light" kind="light" on={(d) => setButton("light", d)} />
+            <Act label="Launch" sub="heavy" kind="heavy" on={(d) => setButton("heavy", d)} />
+            <Act label="Bolt" kind="bolt" on={(d) => setButton("special", d)} />
+            <Act label="Jump" kind="jump" on={(d) => setButton("jump", d)} />
+            <Act label="Evolve" kind="evolve" buttonRef={evolveRef} on={(d) => setButton("burst", d)} />
           </div>
         </div>
       )}
 
       {phase === "match" && (
-        <div className="absolute inset-0 flex items-center justify-center bg-bg/80 px-4">
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-bg/80 px-4">
           <div className="w-full max-w-sm border border-border bg-surface p-6 text-center">
             <p className="font-display text-sm tracking-[0.28em] text-primary">{won ? "RING CLEARED" : "RING LOST"}</p>
             <h2 className="font-display mt-2 text-4xl">{won ? "You win" : "Rival wins"}</h2>
@@ -495,8 +507,29 @@ function Fight({
     </div>
   );
 
-  function setTouch(key: keyof Pad, down: boolean) {
-    touchRef.current[key] = down;
+  function publishTouch() {
+    const s = stickRef.current;
+    const b = buttonRef.current;
+    const t = touchRef.current;
+    t.left = s.left && !s.right;
+    t.right = s.right && !s.left;
+    t.jump = s.jump || b.jump;
+    t.block = s.block || b.block;
+    t.light = b.light;
+    t.heavy = b.heavy;
+    t.special = b.special;
+    t.burst = b.burst;
+  }
+
+  function setStick(v: { left: boolean; right: boolean; jump: boolean; block: boolean }) {
+    stickRef.current = v;
+    publishTouch();
+    if (v.left || v.right || v.jump || v.block) unlockAudio();
+  }
+
+  function setButton(key: keyof Pad, down: boolean) {
+    buttonRef.current[key] = down;
+    publishTouch();
     if (down) unlockAudio();
   }
 }
@@ -553,21 +586,109 @@ function Bar({
   );
 }
 
-function Touch({ label, on, hot, ready }: { label: string; on: (down: boolean) => void; hot?: boolean; ready?: boolean }) {
+function Act({
+  label,
+  sub,
+  kind,
+  on,
+  buttonRef,
+}: {
+  label: string;
+  sub?: string;
+  kind: string;
+  on: (down: boolean) => void;
+  buttonRef?: React.RefObject<HTMLButtonElement | null>;
+}) {
+  const [down, setDown] = useState(false);
+  const release = () => {
+    setDown(false);
+    on(false);
+  };
   return (
     <button
+      ref={buttonRef}
       type="button"
-      className={`pad-btn ${hot ? "hot" : ""} ${ready ? "ready" : ""}`}
+      className={`act act-${kind} ${down ? "is-down" : ""}`}
+      aria-label={sub ? `${label}, ${sub}` : label}
+      aria-pressed={down}
       onPointerDown={(e) => {
+        if (e.button !== 0) return;
         e.preventDefault();
         e.currentTarget.setPointerCapture(e.pointerId);
+        setDown(true);
         on(true);
       }}
-      onPointerUp={() => on(false)}
-      onPointerCancel={() => on(false)}
+      onPointerUp={release}
+      onPointerCancel={release}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {label}
+      <span>{label}</span>
+      {sub ? <span className="act-sub">{sub}</span> : null}
     </button>
+  );
+}
+
+function Stick({ onChange }: { onChange: (v: { left: boolean; right: boolean; jump: boolean; block: boolean }) => void }) {
+  const baseRef = useRef<HTMLDivElement>(null);
+  const [knob, setKnob] = useState({ x: 0, y: 0 });
+  const [hot, setHot] = useState(false);
+  const idle = { left: false, right: false, jump: false, block: false };
+
+  const read = (clientX: number, clientY: number) => {
+    const el = baseRef.current;
+    if (!el) return idle;
+    const r = el.getBoundingClientRect();
+    const max = r.width * 0.34;
+    let dx = clientX - (r.left + r.width / 2);
+    let dy = clientY - (r.top + r.height / 2);
+    const mag = Math.hypot(dx, dy) || 1;
+    const clamped = Math.min(max, mag);
+    dx = (dx / mag) * clamped;
+    dy = (dy / mag) * clamped;
+    setKnob({ x: dx, y: dy });
+    const nx = dx / max;
+    const ny = dy / max;
+    const ax = Math.abs(nx);
+    const ay = Math.abs(ny);
+    return {
+      left: nx < -0.28 && ax >= ay * 0.62,
+      right: nx > 0.28 && ax >= ay * 0.62,
+      jump: ny < -0.56 && ay > ax * 0.75,
+      block: ny > 0.5 && ay > ax,
+    };
+  };
+
+  const end = () => {
+    setKnob({ x: 0, y: 0 });
+    setHot(false);
+    onChange(idle);
+  };
+
+  return (
+    <div
+      ref={baseRef}
+      className={`stick ${hot ? "is-hot" : ""}`}
+      role="group"
+      aria-label="Move. Slide to run, up to jump, down to shield."
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        setHot(true);
+        onChange(read(e.clientX, e.clientY));
+      }}
+      onPointerMove={(e) => {
+        if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+        onChange(read(e.clientX, e.clientY));
+      }}
+      onPointerUp={end}
+      onPointerCancel={end}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <div className="stick-cross" />
+      <div className="stick-knob" style={{ transform: `translate(${knob.x}px, ${knob.y}px)` }}>
+        MOVE
+      </div>
+    </div>
   );
 }

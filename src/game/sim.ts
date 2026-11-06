@@ -1,14 +1,17 @@
 import { sfx } from "@/game/audio";
 import { advantage, BEAST_MAP, type Beast, type BeastId, type Move } from "@/game/roster";
 
-export const WORLD_W = 1700;
-export const STAGE = { l: 400, r: 1300 };
+export const WORLD_W = 2700;
+export const STAGE = { l: 320, r: 2380 };
 export const PLATS = [
-  { l: 500, r: 760, y: 190 },
-  { l: 940, r: 1200, y: 190 },
-  { l: 690, r: 1010, y: 360 },
+  { l: 500, r: 900, y: 155 },
+  { l: 1800, r: 2200, y: 155 },
+  { l: 960, r: 1280, y: 240 },
+  { l: 1420, r: 1740, y: 240 },
+  { l: 1140, r: 1560, y: 385 },
 ];
-export const BLAST = { l: -260, r: 1960, b: -560, t: 1500 };
+export const BLAST = { l: -560, r: 3260, b: -740, t: 1860 };
+const SPAWN_X = [820, 1880] as const;
 const GRAVITY = 2000;
 const STOCKS = 3;
 
@@ -136,7 +139,7 @@ function makeFighter(slot: 0 | 1, id: BeastId): Fighter {
   return {
     slot,
     beast,
-    x: slot === 0 ? 620 : 1080,
+    x: SPAWN_X[slot],
     y: 0,
     vx: 0,
     vy: 0,
@@ -243,8 +246,8 @@ export class MatchSim {
       f.meter = 0;
       f.burst = 0;
     }
-    a.x = 620;
-    b.x = 1080;
+    a.x = SPAWN_X[0];
+    b.x = SPAWN_X[1];
     a.facing = 1;
     b.facing = -1;
     this.shots = [];
@@ -630,14 +633,14 @@ export class MatchSim {
   }
 
   private place(f: Fighter) {
-    f.x = f.slot === 0 ? 640 : 1060;
-    f.y = 420;
+    f.x = SPAWN_X[f.slot];
+    f.y = 12;
     f.vx = 0;
-    f.vy = -40;
-    f.grounded = false;
+    f.vy = 0;
+    f.grounded = true;
     f.jumps = 2;
     f.airUsed = false;
-    f.action = "jump";
+    f.action = "idle";
     f.dmg = 0;
     f.invuln = 1.5;
     f.flash = 0.4;
