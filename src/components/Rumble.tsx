@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { Droplets, Flame, Leaf, Volume2, VolumeX, Zap } from "lucide-react";
 import { loadArt, type Art } from "@/game/art";
 import { isMuted, setMuted, sfx, unlockAudio } from "@/game/audio";
+import { advance, drawCircuit, foeOf, type Circuit } from "@/game/circuit";
 import { createCamera, render, updateCamera, type Camera } from "@/game/draw";
-import { BEASTS, counterTo, matchupLine, type BeastId } from "@/game/roster";
+import { BEAST_MAP, BEASTS, matchupLine, type BeastId } from "@/game/roster";
 import { EMPTY_PAD, MatchSim, STAGE, type Pad } from "@/game/sim";
 
-type Save = { wins: number; losses: number; by: Partial<Record<BeastId, number>> };
-type Screen = "title" | "select" | "fight";
+type Save = { wins: number; losses: number; titles: number; by: Partial<Record<BeastId, number>> };
+type Screen = "title" | "roster" | "bracket" | "fight";
 
 const SAVE_KEY = "nexus-rumble-v1";
 const ICONS = { spark: Zap, blaze: Flame, tide: Droplets, thorn: Leaf };
@@ -15,19 +16,20 @@ const ICONS = { spark: Zap, blaze: Flame, tide: Droplets, thorn: Leaf };
 function loadSave(): Save {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return { wins: 0, losses: 0, by: {} };
+    if (!raw) return { wins: 0, losses: 0, titles: 0, by: {} };
     const parsed = JSON.parse(raw) as Save;
-    return { wins: parsed.wins || 0, losses: parsed.losses || 0, by: parsed.by || {} };
+    return { wins: parsed.wins || 0, losses: parsed.losses || 0, titles: parsed.titles || 0, by: parsed.by || {} };
   } catch {
-    return { wins: 0, losses: 0, by: {} };
+    return { wins: 0, losses: 0, titles: 0, by: {} };
   }
 }
 
-function writeSave(result: "win" | "loss", id: BeastId) {
+function writeSave(result: "win" | "loss", id: BeastId, title = false) {
   const save = loadSave();
   if (result === "win") {
     save.wins += 1;
     save.by[id] = (save.by[id] || 0) + 1;
+    if (title) save.titles += 1;
   } else save.losses += 1;
   localStorage.setItem(SAVE_KEY, JSON.stringify(save));
   return save;
@@ -40,11 +42,11 @@ function blankPad(): Pad {
 export function Rumble() {
   const [screen, setScreen] = useState<Screen>("title");
   const [you, setYou] = useState<BeastId>("voltusk");
-  const [rival, setRival] = useState<BeastId>("thornox");
   const [art, setArt] = useState<Art | null>(null);
-  const [save, setSave] = useState<Save>({ wins: 0, losses: 0, by: {} });
+  const [save, setSave] = useState<Save>({ wins: 0, losses: 0, titles: 0, by: {} });
   const [muted, setMute] = useState(false);
   const [bout, setBout] = useState(0);
+  const [circuit, setCircuit] = useState<Circuit | null>(null);
 
   useEffect(() => {
     void loadArt().then(setArt).catch(() => setArt(null));
@@ -54,8 +56,10 @@ export function Rumble() {
   function enter() {
     unlockAudio();
     sfx.ui();
-    setScreen("select");
+    setScreen("roster");
   }
+
+  const foe = circuit ? foeOf(circuit) : "thornox";
 
   return (
     <div className="game-root text-fg">
@@ -63,46 +67,59 @@ export function Rumble() {
         <div className="menu-scroll">
           {screen === "title" ? (
             <Title save={save} onEnter={enter} />
-          ) : (
-            <Select
+          ) : screen === "roster" ? (
+            <Roster
               you={you}
-              rival={rival}
               ready={art !== null}
               onYou={(id) => {
                 unlockAudio();
                 sfx.ui();
                 setYou(id);
-                setRival(counterTo(id));
-              }}
-              onRival={(id) => {
-                unlockAudio();
-                sfx.ui();
-                setRival(id);
               }}
               onBack={() => setScreen("title")}
+              onDraw={() => {
+                unlockAudio();
+                sfx.ui();
+                setCircuit(drawCircuit(you));
+                setScreen("bracket");
+              }}
+            />
+          ) : circuit ? (
+            <Bracket
+              circuit={circuit}
+              onBack={() => setScreen("roster")}
               onFight={() => {
                 unlockAudio();
                 sfx.fight();
                 setBout((n) => n + 1);
                 setScreen("fight");
               }}
+              onNew={() => {
+                unlockAudio();
+                sfx.ui();
+                setCircuit(drawCircuit(you));
+              }}
             />
-          )}
+          ) : null}
         </div>
       ) : (
         <Fight
           key={bout}
           you={you}
-          rival={rival}
+          rival={foe}
           art={art}
           muted={muted}
+          stakes={circuit?.round === "final" ? "final" : "semi"}
           onMute={() => {
             const next = !muted;
             setMute(next);
             setMuted(next);
           }}
-          onExit={() => setScreen("select")}
-          onRecord={(result) => setSave(writeSave(result, you))}
+          onRecord={(result) => setSave(writeSave(result, you, result === "win" && circuit?.round === "final"))}
+          onDone={(won) => {
+            setCircuit((c) => (c ? advance(c, won) : c));
+            setScreen("bracket");
+          }}
         />
       )}
     </div>
@@ -118,57 +135,145 @@ function Title({ save, onEnter }: { save: Save; onEnter: () => void }) {
         NEXUS
         <span className="block text-accent">RUMBLE</span>
       </h1>
-      <p className="max-w-md text-base text-muted">Platform brawl. Jump, launch, and knock them off the ring. Three stocks.</p>
+      <p className="max-w-md text-base text-muted">Four-beast circuit. Win your semi, then the final. Three stocks a match.</p>
       <div className="grid w-full grid-cols-4 gap-2">
         {BEASTS.map((b) => (
           <img key={b.id} src={`/sprites/${b.id}/frame-1.png`} alt={b.name} className="h-24 w-full object-contain sm:h-36" />
         ))}
       </div>
       <button type="button" onClick={onEnter} className="font-display min-h-12 bg-primary px-8 text-lg font-semibold tracking-wide text-bg">
-        Enter the ring
+        Enter the circuit
       </button>
-      <p className="text-sm text-muted">{played > 0 ? `${save.wins} wins · ${save.losses} losses` : "Four beasts. One ring. You and a rival CPU."}</p>
+      <p className="text-sm text-muted">
+        {played > 0 ? `${save.titles} titles · ${save.wins} wins · ${save.losses} losses` : "Pick one beast. The other three fill the bracket."}
+      </p>
     </div>
   );
 }
 
-function Select({
+function Roster({
   you,
-  rival,
   ready,
   onYou,
-  onRival,
   onBack,
-  onFight,
+  onDraw,
 }: {
   you: BeastId;
-  rival: BeastId;
   ready: boolean;
   onYou: (id: BeastId) => void;
-  onRival: (id: BeastId) => void;
   onBack: () => void;
-  onFight: () => void;
+  onDraw: () => void;
 }) {
+  const beast = BEAST_MAP[you];
+  const moves = [beast.light, beast.heavy, { name: beast.shot.name, tag: beast.shot.tag, note: beast.shot.note }];
   return (
     <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-5 px-4 py-5">
       <div className="flex items-center justify-between gap-3">
         <button type="button" onClick={onBack} className="min-h-11 px-2 text-sm text-muted">
           Back
         </button>
-        <h2 className="font-display text-xl tracking-wide">Choose your beast</h2>
+        <h2 className="font-display text-xl tracking-wide">Your beast</h2>
         <span className="w-12" />
       </div>
       <Picker label="You" selected={you} tone="you" onPick={onYou} />
-      <Picker label="Rival CPU" selected={rival} tone="rival" flip onPick={onRival} />
-      <p className="text-center text-sm text-muted">{matchupLine(you, rival)}</p>
+      <ul className="grid gap-2">
+        {moves.map((m) => (
+          <li key={m.name} className="flex items-baseline justify-between gap-3 border border-border px-3 py-2">
+            <span className="font-display text-sm tracking-wide text-primary">{m.tag}</span>
+            <span className="font-display flex-1 text-sm">{m.name}</span>
+            <span className="text-right text-xs text-muted">{m.note}</span>
+          </li>
+        ))}
+      </ul>
       <button
         type="button"
         disabled={!ready}
-        onClick={onFight}
+        onClick={onDraw}
         className="font-display min-h-12 bg-accent text-lg font-semibold tracking-wide text-bg disabled:opacity-50"
       >
-        {ready ? "Fight" : "Loading beasts…"}
+        {ready ? "Draw the bracket" : "Loading beasts…"}
       </button>
+    </div>
+  );
+}
+
+function Bracket({
+  circuit,
+  onBack,
+  onFight,
+  onNew,
+}: {
+  circuit: Circuit;
+  onBack: () => void;
+  onFight: () => void;
+  onNew: () => void;
+}) {
+  const live = circuit.round === "semi" || circuit.round === "final";
+  const foe = foeOf(circuit);
+  const youWonSemi = circuit.round === "final" || circuit.round === "champion" || circuit.fell === "final";
+  const youLost = circuit.round === "out";
+  return (
+    <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-4 px-4 py-5">
+      <div className="flex items-center justify-between gap-3">
+        <button type="button" onClick={onBack} className="min-h-11 px-2 text-sm text-muted">
+          Roster
+        </button>
+        <h2 className="font-display text-xl tracking-wide">Circuit</h2>
+        <span className="w-12" />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <section className="border border-border p-3">
+          <p className="font-display mb-2 text-xs tracking-[0.2em] text-primary">YOUR SEMI</p>
+          <Slot id={circuit.you} mark={circuit.fell === "semi" ? "out" : youWonSemi ? "win" : "live"} />
+          <Slot id={circuit.semiRival} mark={circuit.fell === "semi" ? "win" : youWonSemi ? "out" : "live"} />
+        </section>
+        <section className="border border-border p-3">
+          <p className="font-display mb-2 text-xs tracking-[0.2em] text-muted">OTHER SEMI</p>
+          <Slot id={circuit.other[0]} mark={circuit.otherWinner === circuit.other[0] ? "win" : "out"} />
+          <Slot id={circuit.other[1]} mark={circuit.otherWinner === circuit.other[1] ? "win" : "out"} />
+          <p className="mt-2 text-xs text-muted">{circuit.otherLine}</p>
+        </section>
+      </div>
+      <section className="border border-gold p-3">
+        <p className="font-display mb-2 text-xs tracking-[0.2em] text-gold">FINAL</p>
+        {circuit.round === "semi" ? (
+          <p className="text-sm text-muted">Winner of your semi meets {BEAST_MAP[circuit.otherWinner].name}.</p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Slot id={circuit.you} mark={circuit.round === "champion" ? "win" : circuit.round === "out" && youWonSemi ? "out" : "live"} />
+            <Slot id={circuit.otherWinner} mark={circuit.round === "champion" ? "out" : circuit.round === "out" && youWonSemi ? "win" : "live"} />
+          </div>
+        )}
+      </section>
+      {circuit.round === "champion" ? (
+        <>
+          <h3 className="font-display text-center text-3xl text-gold">Champion</h3>
+          <p className="text-center text-sm text-muted">{BEAST_MAP[circuit.you].name} clears the circuit.</p>
+        </>
+      ) : null}
+      {youLost ? <p className="text-center text-sm text-accent">Eliminated.</p> : null}
+      {live ? (
+        <button type="button" onClick={onFight} className="font-display min-h-12 bg-accent text-lg font-semibold text-bg">
+          {circuit.round === "final" ? `Final vs ${BEAST_MAP[foe].name}` : `Semi vs ${BEAST_MAP[foe].name}`}
+        </button>
+      ) : (
+        <button type="button" onClick={onNew} className="font-display min-h-12 bg-primary text-lg font-semibold text-bg">
+          New circuit
+        </button>
+      )}
+      {live ? <p className="text-center text-xs text-muted">{matchupLine(circuit.you, foe)}</p> : null}
+    </div>
+  );
+}
+
+function Slot({ id, mark }: { id: BeastId; mark: "live" | "win" | "out" }) {
+  const b = BEAST_MAP[id];
+  const border = mark === "win" ? "border-gold" : mark === "live" ? "border-primary" : "border-border";
+  return (
+    <div className={`mb-2 flex items-center gap-2 border px-2 py-1.5 ${border} ${mark === "out" ? "opacity-45" : ""}`}>
+      <img src={`/sprites/${id}/frame-1.png`} alt="" className="h-10 w-10 object-contain" />
+      <span className="font-display text-sm">{b.name}</span>
+      <span className="ml-auto text-xs tracking-wide text-muted">{mark === "win" ? "W" : mark === "out" ? "out" : "next"}</span>
     </div>
   );
 }
@@ -219,17 +324,19 @@ function Fight({
   rival,
   art,
   muted,
+  stakes,
   onMute,
-  onExit,
   onRecord,
+  onDone,
 }: {
   you: BeastId;
   rival: BeastId;
   art: Art | null;
   muted: boolean;
+  stakes: "semi" | "final";
   onMute: () => void;
-  onExit: () => void;
   onRecord: (result: "win" | "loss") => void;
+  onDone: (won: boolean) => void;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -428,9 +535,12 @@ function Fight({
       <div className="pointer-events-none absolute inset-0">
         <div className="flex items-start justify-between gap-3 px-3 pt-3">
           <Bar name={youBeast.name} tag="YOU" tone="you" stocks={score[0]} pctRef={hpRefs[0]} meterRef={meterRefs[0]} trackRef={meterTrack[0]} />
-          <span ref={timeRef} className="font-display pt-1 text-2xl tracking-widest text-fg">
-            99
-          </span>
+          <div className="flex flex-col items-center pt-1">
+            <span className="font-display text-[10px] tracking-[0.22em] text-gold">{stakes === "final" ? "FINAL" : "SEMI"}</span>
+            <span ref={timeRef} className="font-display text-2xl tracking-widest text-fg">
+              99
+            </span>
+          </div>
           <Bar name={rivalBeast.name} tag="CPU" tone="rival" stocks={score[1]} pctRef={hpRefs[1]} meterRef={meterRefs[1]} trackRef={meterTrack[1]} />
         </div>
         <div ref={bannerRef} className="font-display absolute inset-x-0 top-[30%] text-center text-5xl tracking-[0.18em] text-fg sm:text-6xl" />
@@ -454,7 +564,7 @@ function Fight({
 
       {!touchUi && (
         <p className="pointer-events-none absolute bottom-3 left-1/2 hidden -translate-x-1/2 text-center text-xs text-muted md:block">
-          A D run · W jump (again in the air) · J light · K launch · L bolt · S shield / fast-fall · E digivolve
+          {youBeast.light.tag} J · {youBeast.heavy.tag} K · {youBeast.shot.tag} L · W jump · S shield · E digivolve
         </p>
       )}
 
@@ -465,9 +575,9 @@ function Fight({
             <Act label="Shield" sub="hold · drop" kind="shield" on={(d) => setButton("block", d)} />
           </div>
           <div className="action-pad" role="group" aria-label="Attacks">
-            <Act label="Hit" sub="light" kind="light" on={(d) => setButton("light", d)} />
-            <Act label="Launch" sub="heavy" kind="heavy" on={(d) => setButton("heavy", d)} />
-            <Act label="Bolt" kind="bolt" on={(d) => setButton("special", d)} />
+            <Act label={youBeast.light.tag} kind="light" on={(d) => setButton("light", d)} />
+            <Act label={youBeast.heavy.tag} kind="heavy" on={(d) => setButton("heavy", d)} />
+            <Act label={youBeast.shot.tag} kind="bolt" on={(d) => setButton("special", d)} />
             <Act label="Jump" kind="jump" on={(d) => setButton("jump", d)} />
             <Act label="Evolve" kind="evolve" buttonRef={evolveRef} on={(d) => setButton("burst", d)} />
           </div>
@@ -477,26 +587,14 @@ function Fight({
       {phase === "match" && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-bg/80 px-4">
           <div className="w-full max-w-sm border border-border bg-surface p-6 text-center">
-            <p className="font-display text-sm tracking-[0.28em] text-primary">{won ? "RING CLEARED" : "RING LOST"}</p>
-            <h2 className="font-display mt-2 text-4xl">{won ? "You win" : "Rival wins"}</h2>
+            <p className="font-display text-sm tracking-[0.28em] text-primary">
+              {won ? (stakes === "final" ? "CIRCUIT CLEARED" : "SEMI CLEARED") : "ELIMINATED"}
+            </p>
+            <h2 className="font-display mt-2 text-4xl">{won ? (stakes === "final" ? "Champion" : "You advance") : "Out of the circuit"}</h2>
             <p className="mt-2 text-sm text-muted">Stocks {score[0]} – {score[1]}</p>
             <div className="mt-5 flex flex-col gap-2">
-              <button
-                type="button"
-                className="font-display min-h-12 bg-primary font-semibold text-bg"
-                onClick={() => {
-                  recorded.current = false;
-                  simRef.current?.rematch();
-                  setPhase("intro");
-                  setScore([3, 3]);
-                  setVictor(null);
-                  sfx.ui();
-                }}
-              >
-                Rematch
-              </button>
-              <button type="button" className="min-h-12 border border-border text-fg" onClick={onExit}>
-                Switch beasts
+              <button type="button" className="font-display min-h-12 bg-primary font-semibold text-bg" onClick={() => onDone(won)}>
+                Bracket
               </button>
             </div>
           </div>

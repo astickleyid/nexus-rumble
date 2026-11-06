@@ -73,6 +73,7 @@ export type Fighter = {
   dodgeCd: number;
   combo: number;
   comboTimer: number;
+  burn: number;
   buf: Buf;
   prev: Pad;
 };
@@ -89,6 +90,11 @@ export type Shot = {
   life: number;
   max: number;
   alive: boolean;
+  form: "bolt" | "lob" | "beam" | "ram";
+  vy: number;
+  grav: number;
+  pierce: boolean;
+  struck: boolean;
 };
 
 export type Spark = {
@@ -124,6 +130,8 @@ type PendingHit = {
   kind: "light" | "heavy" | "special";
   hx: number;
   hy: number;
+  angle: number;
+  burn: number;
   blocked: boolean;
   armored: boolean;
 };
@@ -167,6 +175,7 @@ function makeFighter(slot: 0 | 1, id: BeastId): Fighter {
     dodgeCd: 0,
     combo: 0,
     comboTimer: 0,
+    burn: 0,
     buf: emptyBuf(),
     prev: { ...EMPTY_PAD },
   };
@@ -241,6 +250,7 @@ export class MatchSim {
       f.respawn = 0;
       f.combo = 0;
       f.comboTimer = 0;
+      f.burn = 0;
       f.buf = emptyBuf();
       f.land = 0;
       f.meter = 0;
@@ -532,7 +542,8 @@ export class MatchSim {
     f.t = 0;
     f.hit = false;
     f.shotOut = false;
-    f.armor = kind === "heavy" && f.beast.id === "thornox" && f.grounded;
+    const mv = kind === "light" ? f.beast.light : kind === "heavy" ? f.beast.heavy : null;
+    f.armor = (!!mv?.armor && f.grounded) || (kind === "special" && f.beast.shot.form === "ram");
     if (kind === "special") {
       f.specialCd = f.beast.shot.cooldown * (f.burst > 0 ? 0.55 : 1);
       sfx.shot();
@@ -550,12 +561,19 @@ export class MatchSim {
         continue;
       }
       const attacking = f.action === "light" || f.action === "heavy" || f.action === "special";
-      if (attacking && f.grounded) {
+      const ramming = f.action === "special" && f.beast.shot.form === "ram";
+      if (ramming) f.vx = f.facing * f.beast.shot.speed;
+      else if (attacking && f.grounded) {
         const mv = moveOf(f);
         const slide = f.action === "special" ? 40 : (mv?.slide ?? 0);
         const start = f.action === "special" ? 0.12 : (mv?.startup ?? 0.08);
         if (f.t < start) f.vx = -f.facing * 30;
         else f.vx = f.facing * slide;
+      }
+
+      if (f.burn > 0) {
+        f.burn = Math.max(0, f.burn - dt);
+        f.dmg = Math.min(999, f.dmg + 7 * dt);
       }
 
       if (!f.grounded) {
@@ -596,13 +614,13 @@ export class MatchSim {
       if (attacking) {
         const prev = f.t;
         f.t += dt;
-        if (f.action === "special" && !f.shotOut && prev < 0.14 && f.t >= 0.14) {
+        if (f.action === "special" && f.beast.shot.form !== "ram" && !f.shotOut && prev < 0.14 && f.t >= 0.14) {
           f.shotOut = true;
           this.spawnShot(f);
         }
         const mv = moveOf(f);
-        const total = f.action === "special" ? 0.4 : mv ? mv.startup + mv.active + mv.recovery : 0.3;
-        if (f.armor && mv && f.t > mv.startup) f.armor = false;
+        const total = f.action === "special" ? (f.beast.shot.form === "ram" ? 0.5 : 0.42) : mv ? mv.startup + mv.active + mv.recovery : 0.3;
+        if (f.armor && mv && f.t > mv.startup + mv.active) f.armor = false;
         if (f.t >= total) {
           f.action = f.grounded ? "idle" : "jump";
           f.t = 0;
@@ -624,10 +642,12 @@ export class MatchSim {
 
     for (const s of this.shots) {
       if (!s.alive) continue;
+      s.vy -= s.grav * dt;
       s.x += s.vx * dt;
-      s.y += Math.sin(s.life * 18) * 10 * dt;
+      s.y += s.vy * dt;
+      if (s.form === "bolt") s.y += Math.sin(s.life * 18) * 10 * dt;
       s.life -= dt;
-      if (s.life <= 0 || s.x < BLAST.l || s.x > BLAST.r) s.alive = false;
+      if (s.life <= 0 || s.x < BLAST.l || s.x > BLAST.r || (s.grav > 0 && s.y < 8)) s.alive = false;
     }
     this.shots = this.shots.filter((s) => s.alive);
   }
@@ -642,6 +662,7 @@ export class MatchSim {
     f.airUsed = false;
     f.action = "idle";
     f.dmg = 0;
+    f.burn = 0;
     f.invuln = 1.5;
     f.flash = 0.4;
     f.hit = false;
@@ -680,10 +701,11 @@ export class MatchSim {
   private spawnShot(f: Fighter) {
     const spec = f.beast.shot;
     const boost = f.burst > 0 ? 1.25 : 1;
+    const lob = spec.form === "lob";
     this.shots.push({
       owner: f.slot,
-      x: f.x + f.facing * 78,
-      y: f.y + 96,
+      x: f.x + f.facing * (spec.form === "beam" ? 90 : 70),
+      y: f.y + (lob ? 110 : 90),
       vx: f.facing * spec.speed,
       w: spec.w,
       h: spec.h,
@@ -692,6 +714,11 @@ export class MatchSim {
       life: spec.life,
       max: spec.life,
       alive: true,
+      form: spec.form,
+      vy: lob ? 340 : 0,
+      grav: lob ? 780 : 0,
+      pierce: spec.form === "beam",
+      struck: false,
     });
   }
 
@@ -797,58 +824,83 @@ export class MatchSim {
   private collide() {
     const hits: PendingHit[] = [];
     for (const f of this.p) {
-      const mv = moveOf(f);
-      if (!mv || f.hit || f.respawn > 0) continue;
-      if (f.t < mv.startup || f.t > mv.startup + mv.active) continue;
+      if (f.respawn > 0) continue;
       const target = this.p[f.slot ^ 1];
       if (target.respawn > 0) continue;
-      if (!this.overlaps(f, target, mv)) continue;
+      if (f.action === "special" && f.beast.shot.form === "ram") {
+        const spec = f.beast.shot;
+        if (!f.hit && f.t >= 0.06 && f.t <= 0.34 && this.overlaps(f, target, spec.w, 24, 78)) {
+          f.hit = true;
+          hits.push(this.pack(f, target, spec.damage, spec.kb, "special", 0.42, 0, f.x + f.facing * 40, f.y + 70));
+        }
+        continue;
+      }
+      const mv = moveOf(f);
+      if (!mv || f.hit) continue;
+      if (f.t < mv.startup || f.t > mv.startup + mv.active) continue;
+      const hit = mv.shape === "nova" ? this.novaHit(f, target, mv.reach) : this.overlaps(f, target, mv.reach, mv.y, mv.height);
+      if (!hit) continue;
       f.hit = true;
-      hits.push({
-        attacker: f,
-        target,
-        damage: mv.damage,
-        kb: mv.kb,
-        kind: f.action === "heavy" ? "heavy" : "light",
-        hx: (f.x + target.x) / 2 + f.facing * 16,
-        hy: f.y + mv.y + mv.height * 0.4,
-        blocked: target.grounded && target.action === "block",
-        armored: target.armor,
-      });
+      hits.push(this.pack(f, target, mv.damage, mv.kb, f.action === "heavy" ? "heavy" : "light", mv.angle, mv.burn, (f.x + target.x) / 2 + f.facing * 16, f.y + mv.y + mv.height * 0.4));
     }
     for (const s of this.shots) {
-      if (!s.alive) continue;
+      if (!s.alive || s.struck) continue;
       const target = this.p[s.owner ^ 1];
       if (target.respawn > 0 || target.invuln > 0) continue;
       const boxY = target.y + 8;
       if (s.x + s.w / 2 < target.x - target.beast.hurtW / 2) continue;
       if (s.x - s.w / 2 > target.x + target.beast.hurtW / 2) continue;
       if (s.y + s.h < boxY || s.y > boxY + target.beast.hurtH) continue;
-      s.alive = false;
+      if (s.pierce) s.struck = true;
+      else s.alive = false;
       const attacker = this.p[s.owner];
-      hits.push({
-        attacker,
-        target,
-        damage: s.damage,
-        kb: s.kb,
-        kind: "special",
-        hx: s.x,
-        hy: s.y,
-        blocked: target.grounded && target.action === "block",
-        armored: false,
-      });
+      if (!attacker) continue;
+      const angle = s.form === "lob" ? 0.9 : s.form === "beam" ? 0.14 : 0.28;
+      hits.push(this.pack(attacker, target, s.damage, s.kb, "special", angle, 0, s.x, s.y));
     }
     for (const h of hits) this.applyHit(h);
   }
 
-  private overlaps(f: Fighter, target: Fighter, mv: Move) {
-    const x1 = f.x + f.facing * 24;
-    const x2 = f.x + f.facing * (24 + mv.reach);
+  private pack(
+    attacker: Fighter,
+    target: Fighter,
+    damage: number,
+    kb: number,
+    kind: PendingHit["kind"],
+    angle: number,
+    burn: number,
+    hx: number,
+    hy: number,
+  ): PendingHit {
+    return {
+      attacker,
+      target,
+      damage,
+      kb,
+      kind,
+      hx,
+      hy,
+      angle,
+      burn,
+      blocked: target.grounded && target.action === "block",
+      armored: target.armor,
+    };
+  }
+
+  private novaHit(f: Fighter, target: Fighter, reach: number) {
+    const dx = target.x - f.x;
+    const dy = target.y + target.beast.hurtH * 0.4 - (f.y + 70);
+    return Math.hypot(dx, dy) < reach;
+  }
+
+  private overlaps(f: Fighter, target: Fighter, reach: number, y: number, height: number) {
+    const x1 = f.x + f.facing * 20;
+    const x2 = f.x + f.facing * (20 + reach);
     const left = Math.min(x1, x2);
-    const y = f.y + mv.y;
+    const top = f.y + y;
     const tx = target.x - target.beast.hurtW / 2;
     const ty = target.y + 8;
-    return left < tx + target.beast.hurtW && left + Math.abs(x2 - x1) > tx && y < ty + target.beast.hurtH && y + mv.height > ty;
+    return left < tx + target.beast.hurtW && left + Math.abs(x2 - x1) > tx && top < ty + target.beast.hurtH && top + height > ty;
   }
 
   private applyHit(h: PendingHit) {
@@ -886,8 +938,8 @@ export class MatchSim {
     if (attacker.burst > 0) power *= 1.3;
     if (edge > 0) power *= 1.18;
     if (h.blocked) power *= 0.22;
-    const angle = h.kind === "heavy" ? 0.6 : h.kind === "special" ? 0.48 : 0.3;
-    const dir = attacker.facing;
+    const angle = h.angle;
+    const dir = Math.sign(target.x - attacker.x) || attacker.facing;
     target.vx = Math.cos(angle) * power * dir;
     target.vy = h.blocked ? 0 : Math.sin(angle) * power;
     if (h.blocked) {
@@ -909,6 +961,11 @@ export class MatchSim {
     if (h.kind === "heavy") sfx.crush();
     else if (h.blocked) sfx.block();
     else sfx.hit();
+    if (h.burn > 0 && !h.blocked && !h.armored) {
+      target.burn = Math.max(target.burn, h.burn);
+      this.callout = "BURN";
+      this.calloutT = 0.5;
+    }
     if (edge > 0 && comboIndex === 1 && !h.blocked) {
       this.callout = "SUPER EFFECTIVE";
       this.calloutT = 0.7;

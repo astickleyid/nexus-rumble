@@ -21,7 +21,17 @@ export type Beast = {
   shot: ShotDef;
 };
 
+export type MoveShape = "jab" | "upper" | "claw" | "nova" | "lance" | "sweep" | "guard" | "slam";
+export type ShotForm = "bolt" | "lob" | "beam" | "ram";
+
 export type Move = {
+  name: string;
+  tag: string;
+  note: string;
+  shape: MoveShape;
+  angle: number;
+  armor: boolean;
+  burn: number;
   startup: number;
   active: number;
   recovery: number;
@@ -38,6 +48,10 @@ export type Move = {
 };
 
 export type ShotDef = {
+  name: string;
+  tag: string;
+  note: string;
+  form: ShotForm;
   damage: number;
   kb: number;
   stun: number;
@@ -49,7 +63,10 @@ export type ShotDef = {
   cooldown: number;
 };
 
-const light = (p: Partial<Move>): Move => ({
+const light = (p: Partial<Move> & Pick<Move, "name" | "tag" | "note" | "shape">): Move => ({
+  angle: 0.28,
+  armor: false,
+  burn: 0,
   startup: 0.07,
   active: 0.09,
   recovery: 0.16,
@@ -66,7 +83,10 @@ const light = (p: Partial<Move>): Move => ({
   ...p,
 });
 
-const heavy = (p: Partial<Move>): Move => ({
+const heavy = (p: Partial<Move> & Pick<Move, "name" | "tag" | "note" | "shape">): Move => ({
+  angle: 0.62,
+  armor: false,
+  burn: 0,
   startup: 0.16,
   active: 0.1,
   recovery: 0.3,
@@ -99,9 +119,48 @@ export const BEASTS: Beast[] = [
     body: 170,
     hurtW: 66,
     hurtH: 124,
-    light: light({ startup: 0.05, damage: 6, reach: 72, stun: 0.28, slide: 90 }),
-    heavy: heavy({ startup: 0.13, damage: 13, reach: 88, slide: 210 }),
-    shot: { damage: 11, kb: 300, stun: 0.32, speed: 980, w: 70, h: 32, life: 0.62, meter: 10, cooldown: 0.48 },
+    light: light({
+      name: "Spark Jab",
+      tag: "Jab",
+      note: "Steps in. Stacks hits.",
+      shape: "jab",
+      angle: 0.16,
+      startup: 0.045,
+      damage: 5,
+      kb: 80,
+      reach: 68,
+      slide: 120,
+      stun: 0.22,
+    }),
+    heavy: heavy({
+      name: "Volt Upper",
+      tag: "Upper",
+      note: "Launches straight up.",
+      shape: "upper",
+      angle: 1.2,
+      startup: 0.12,
+      damage: 12,
+      kb: 460,
+      reach: 72,
+      height: 100,
+      y: 36,
+      slide: 20,
+    }),
+    shot: {
+      name: "Arc Tusk",
+      tag: "Arc",
+      note: "Fast spark across the ring.",
+      form: "bolt",
+      damage: 9,
+      kb: 240,
+      stun: 0.28,
+      speed: 1120,
+      w: 56,
+      h: 18,
+      life: 0.5,
+      meter: 10,
+      cooldown: 0.42,
+    },
   },
   {
     id: "pyrelon",
@@ -118,9 +177,45 @@ export const BEASTS: Beast[] = [
     body: 164,
     hurtW: 64,
     hurtH: 122,
-    light: light({ damage: 7, reach: 80 }),
-    heavy: heavy({ damage: 15, reach: 94 }),
-    shot: { damage: 14, kb: 340, stun: 0.36, speed: 700, w: 78, h: 44, life: 0.9, meter: 12, cooldown: 0.55 },
+    light: light({
+      name: "Cinder Claw",
+      tag: "Claw",
+      note: "Sets them on fire.",
+      shape: "claw",
+      angle: 0.34,
+      burn: 1.6,
+      damage: 7,
+      reach: 84,
+      kb: 110,
+    }),
+    heavy: heavy({
+      name: "Ash Nova",
+      tag: "Nova",
+      note: "Blasts everything around you.",
+      shape: "nova",
+      angle: 0.95,
+      startup: 0.2,
+      damage: 13,
+      kb: 340,
+      reach: 148,
+      slide: 0,
+      recovery: 0.34,
+    }),
+    shot: {
+      name: "Cinder Spit",
+      tag: "Spit",
+      note: "Lobs a coal that pops up.",
+      form: "lob",
+      damage: 15,
+      kb: 400,
+      stun: 0.36,
+      speed: 460,
+      w: 72,
+      h: 48,
+      life: 1.15,
+      meter: 12,
+      cooldown: 0.62,
+    },
   },
   {
     id: "aqualith",
@@ -137,9 +232,49 @@ export const BEASTS: Beast[] = [
     body: 172,
     hurtW: 60,
     hurtH: 130,
-    light: light({ damage: 7, reach: 108, startup: 0.08, kb: 160 }),
-    heavy: heavy({ damage: 14, reach: 124, startup: 0.17 }),
-    shot: { damage: 12, kb: 280, stun: 0.3, speed: 880, w: 96, h: 26, life: 0.7, meter: 10, cooldown: 0.5 },
+    light: light({
+      name: "Reef Poke",
+      tag: "Poke",
+      note: "Long spear. Barely moves them.",
+      shape: "lance",
+      angle: 0.1,
+      startup: 0.08,
+      damage: 6,
+      kb: 70,
+      reach: 156,
+      height: 26,
+      y: 74,
+      slide: 24,
+    }),
+    heavy: heavy({
+      name: "Riptide",
+      tag: "Tide",
+      note: "Sends them sideways off the ring.",
+      shape: "sweep",
+      angle: 0.22,
+      startup: 0.15,
+      damage: 12,
+      kb: 560,
+      reach: 132,
+      height: 46,
+      y: 28,
+      slide: 80,
+    }),
+    shot: {
+      name: "Tide Lance",
+      tag: "Lance",
+      note: "A beam that keeps traveling.",
+      form: "beam",
+      damage: 11,
+      kb: 220,
+      stun: 0.26,
+      speed: 900,
+      w: 128,
+      h: 16,
+      life: 0.72,
+      meter: 10,
+      cooldown: 0.55,
+    },
   },
   {
     id: "thornox",
@@ -156,9 +291,50 @@ export const BEASTS: Beast[] = [
     body: 196,
     hurtW: 96,
     hurtH: 140,
-    light: light({ startup: 0.11, damage: 9, reach: 86, stun: 0.34, kb: 170, slide: 40 }),
-    heavy: heavy({ startup: 0.22, damage: 19, reach: 108, kb: 480, lift: 260, stun: 0.48, slide: 90 }),
-    shot: { damage: 17, kb: 400, stun: 0.4, speed: 520, w: 84, h: 52, life: 1.05, meter: 14, cooldown: 0.7 },
+    light: light({
+      name: "Bark Knuckle",
+      tag: "Bark",
+      note: "Armored punch.",
+      shape: "guard",
+      angle: 0.3,
+      armor: true,
+      startup: 0.1,
+      damage: 9,
+      kb: 150,
+      reach: 80,
+      stun: 0.32,
+      slide: 36,
+    }),
+    heavy: heavy({
+      name: "Canopy Slam",
+      tag: "Slam",
+      note: "Slow. Sends them a long way.",
+      shape: "slam",
+      angle: 0.7,
+      armor: true,
+      startup: 0.24,
+      damage: 18,
+      kb: 500,
+      reach: 104,
+      lift: 220,
+      stun: 0.48,
+      slide: 40,
+    }),
+    shot: {
+      name: "Root Ram",
+      tag: "Ram",
+      note: "Charges through them.",
+      form: "ram",
+      damage: 16,
+      kb: 440,
+      stun: 0.4,
+      speed: 920,
+      w: 118,
+      h: 70,
+      life: 0.32,
+      meter: 14,
+      cooldown: 0.9,
+    },
   },
 ];
 

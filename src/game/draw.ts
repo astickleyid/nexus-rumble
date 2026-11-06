@@ -305,10 +305,28 @@ function drawFighter(
     ctx.restore();
   }
 
+  if (f.burn > 0) {
+    ctx.save();
+    ctx.fillStyle = EMBER;
+    ctx.globalAlpha = 0.8;
+    const flicker = Math.sin(performance.now() * 0.02);
+    ctx.beginPath();
+    ctx.arc(feetX + flicker * 4, feetY - 90 * scale, 7 * scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   if (f.action === "light" || f.action === "heavy") {
     const mv = f.beast[f.action];
     const active = f.t >= mv.startup && f.t <= mv.startup + mv.active + 0.05;
-    if (active) drawSlash(ctx, feetX, feetY, scale, f.facing, f.beast.accent, f.action === "heavy" ? 1.25 : 1);
+    if (active) drawSlash(ctx, feetX, feetY, scale, f.facing, f.beast.accent, mv.shape);
+  }
+  if (f.action === "special" && f.beast.shot.form === "ram" && f.t < 0.4) {
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = f.beast.accent;
+    ctx.fillRect(feetX - f.facing * 80 * scale, feetY - 90 * scale, f.facing * 90 * scale, 70 * scale);
+    ctx.restore();
   }
 
   if (!fr) return;
@@ -359,20 +377,44 @@ function drawFighter(
   ctx.restore();
 }
 
-function drawSlash(ctx: CanvasRenderingContext2D, x: number, y: number, scale: number, facing: number, color: string, size: number) {
+function drawSlash(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  scale: number,
+  facing: number,
+  color: string,
+  shape: string,
+) {
   ctx.save();
   ctx.translate(x, y - 78 * scale);
   ctx.scale(facing, 1);
   ctx.strokeStyle = color;
-  ctx.globalAlpha = 0.85;
-  ctx.lineWidth = 7 * scale * size;
+  ctx.globalAlpha = 0.9;
   ctx.lineCap = "round";
+  ctx.lineWidth = (shape === "lance" || shape === "slam" ? 8 : 5) * scale;
   ctx.beginPath();
-  ctx.arc(20 * scale, 0, 54 * scale * size, -1.1, 1.15);
-  ctx.stroke();
-  ctx.strokeStyle = BONE;
-  ctx.globalAlpha = 0.7;
-  ctx.lineWidth = 2.5 * scale;
+  if (shape === "upper") {
+    ctx.arc(-8 * scale, 10 * scale, 46 * scale, 0.4, 2.4);
+  } else if (shape === "lance") {
+    ctx.moveTo(10 * scale, 6 * scale);
+    ctx.lineTo(120 * scale, 4 * scale);
+  } else if (shape === "nova") {
+    ctx.arc(0, 20 * scale, 70 * scale, 0, Math.PI * 2);
+  } else if (shape === "sweep") {
+    ctx.arc(16 * scale, 28 * scale, 78 * scale, -0.4, 0.7);
+  } else if (shape === "slam") {
+    ctx.arc(8 * scale, -20 * scale, 50 * scale, 0.2, 2.2);
+  } else if (shape === "claw") {
+    ctx.moveTo(16 * scale, -16 * scale);
+    ctx.lineTo(54 * scale, 10 * scale);
+    ctx.moveTo(22 * scale, 8 * scale);
+    ctx.lineTo(60 * scale, 28 * scale);
+  } else if (shape === "guard") {
+    ctx.arc(18 * scale, 8 * scale, 28 * scale, -1, 1);
+  } else {
+    ctx.arc(16 * scale, 0, 36 * scale, -0.9, 0.9);
+  }
   ctx.stroke();
   ctx.restore();
 }
@@ -410,22 +452,44 @@ function drawShot(
   sy: (y: number) => number,
   scale: number,
 ) {
-  const frames = art.bolt;
-  const idx = Math.floor((1 - shot.life / shot.max) * frames.length) % frames.length;
-  const fr = frames[idx] ?? frames[0];
-  if (!fr) return;
   const owner = sim.p[shot.owner];
-  const dw = shot.w * scale * 1.4;
-  const dh = dw * (fr.img.height / fr.img.width);
+  const color = owner?.beast.accent ?? CYAN;
   const x = sx(shot.x);
   const y = sy(shot.y + shot.h * 0.3);
   ctx.save();
+  if (shot.form === "lob") {
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 18;
+    ctx.beginPath();
+    ctx.arc(x, y, shot.w * scale * 0.38, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+  if (shot.form === "beam") {
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.85;
+    const len = shot.w * scale;
+    ctx.fillRect(shot.vx < 0 ? x - len : x, y - 4 * scale, len, 8 * scale);
+    ctx.restore();
+    return;
+  }
+  const frames = art.bolt;
+  const idx = Math.floor((1 - shot.life / shot.max) * frames.length) % frames.length;
+  const fr = frames[idx] ?? frames[0];
+  if (!fr) {
+    ctx.restore();
+    return;
+  }
+  const dw = shot.w * scale * 1.4;
+  const dh = dw * (fr.img.height / fr.img.width);
   if (shot.vx < 0) {
     ctx.translate(x, 0);
     ctx.scale(-1, 1);
     ctx.translate(-x, 0);
   }
-  blitTint(ctx, fr, x - dw / 2, y - dh / 2, dw, dh, owner?.beast.accent ?? CYAN, 0.45);
+  blitTint(ctx, fr, x - dw / 2, y - dh / 2, dw, dh, color, 0.45);
   ctx.restore();
 }
 
