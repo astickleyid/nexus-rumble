@@ -288,6 +288,12 @@
   color: var(--color-gold);
 }
 
+.act.is-locked,
+.act:disabled {
+  opacity: 0.38;
+  filter: grayscale(0.35);
+}
+
 .act.is-down {
   transform: translateY(1px) scale(0.97);
   filter: brightness(1.2);

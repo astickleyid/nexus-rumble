@@ -203,11 +203,13 @@ export class MatchSim {
   youId: BeastId;
   rivalId: BeastId;
   stage: Stage;
+  online = false;
 
-  constructor(you: BeastId, rival: BeastId, stageId: StageId = "spire") {
+  constructor(you: BeastId, rival: BeastId, stageId: StageId = "spire", opts?: { online?: boolean }) {
     this.youId = you;
     this.rivalId = rival;
     this.stage = STAGE_MAP[stageId];
+    this.online = opts?.online ?? false;
     this.p = [makeFighter(0, you), makeFighter(1, rival)];
     this.beginIntro();
   }
@@ -273,12 +275,15 @@ export class MatchSim {
     this.beginIntro();
   }
 
-  step(dt: number, pad: Pad) {
+  step(dt: number, pad: Pad, rival?: Pad) {
     this.tickFx(dt);
     if (this.phase === "fight") {
       this.readPad(this.p[0], pad, dt);
-      this.thinkAI(dt);
-      this.readPad(this.p[1], this.aiPad, dt);
+      if (rival) this.readPad(this.p[1], rival, dt);
+      else {
+        this.thinkAI(dt);
+        this.readPad(this.p[1], this.aiPad, dt);
+      }
     }
     if (this.hitstop > 0) {
       this.hitstop = Math.max(0, this.hitstop - dt);
@@ -316,16 +321,111 @@ export class MatchSim {
       if (this.bannerT <= 0) this.banner = "";
     }
     this.itemT -= dt;
-    if (this.itemT <= 0) {
+    if (!this.online && this.itemT <= 0) {
       this.itemT = 7.5;
       this.spawnItem();
     }
-    for (const f of this.p) this.drive(f, f.slot === 0 ? pad : this.aiPad, dt);
+    const foePad = rival ?? this.aiPad;
+    for (const f of this.p) this.drive(f, f.slot === 0 ? pad : foePad, dt);
     this.physics(dt);
     this.separate();
     this.moveItems(dt);
     this.collide();
     if (this.time <= 0 && this.phase === "fight") this.timeout();
+  }
+
+  snapshot() {
+    return {
+      time: this.time,
+      phase: this.phase,
+      winner: this.winner,
+      banner: this.banner,
+      callout: this.callout,
+      calloutT: this.calloutT,
+      trauma: this.trauma,
+      p: this.p.map((f) => ({
+        x: f.x,
+        y: f.y,
+        vx: f.vx,
+        vy: f.vy,
+        facing: f.facing,
+        dmg: f.dmg,
+        stocks: f.stocks,
+        meter: f.meter,
+        burst: f.burst,
+        action: f.action,
+        t: f.t,
+        grounded: f.grounded,
+        hitstun: f.hitstun,
+        invuln: f.invuln,
+        respawn: f.respawn,
+        flash: f.flash,
+        burn: f.burn,
+      })),
+      shots: this.shots
+        .filter((s) => s.alive)
+        .map((s) => ({
+          owner: s.owner,
+          x: s.x,
+          y: s.y,
+          vx: s.vx,
+          vy: s.vy,
+          w: s.w,
+          h: s.h,
+          life: s.life,
+          max: s.max,
+          form: s.form,
+        })),
+    };
+  }
+
+  adopt(snap: ReturnType<MatchSim["snapshot"]>) {
+    this.time = snap.time;
+    this.phase = snap.phase;
+    this.winner = snap.winner;
+    this.banner = snap.banner;
+    this.callout = snap.callout;
+    this.calloutT = snap.calloutT;
+    this.trauma = snap.trauma;
+    snap.p.forEach((s, i) => {
+      const f = this.p[i];
+      if (!f) return;
+      f.x = s.x;
+      f.y = s.y;
+      f.vx = s.vx;
+      f.vy = s.vy;
+      f.facing = s.facing;
+      f.dmg = s.dmg;
+      f.stocks = s.stocks;
+      f.meter = s.meter;
+      f.burst = s.burst;
+      f.action = s.action;
+      f.t = s.t;
+      f.grounded = s.grounded;
+      f.hitstun = s.hitstun;
+      f.invuln = s.invuln;
+      f.respawn = s.respawn;
+      f.flash = s.flash;
+      f.burn = s.burn;
+    });
+    this.shots = snap.shots.map((s) => ({
+      owner: s.owner,
+      x: s.x,
+      y: s.y,
+      vx: s.vx,
+      vy: s.vy,
+      w: s.w,
+      h: s.h,
+      life: s.life,
+      max: s.max,
+      form: s.form,
+      damage: 0,
+      kb: 0,
+      alive: true,
+      grav: 0,
+      pierce: s.form === "beam",
+      struck: true,
+    }));
   }
 
   private tickFx(dt: number) {
