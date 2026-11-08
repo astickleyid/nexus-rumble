@@ -24,6 +24,7 @@ import { createCamera, render, updateCamera, type Camera } from "@/game/draw";
 import { P2PRoom } from "@/lib/multiplayer";
 import { BEAST_MAP, BEASTS, matchupLine, type BeastId } from "@/game/roster";
 import { EMPTY_PAD, MatchSim, type Pad } from "@/game/sim";
+import { padActive, readFightPad, safeGamepads } from "@/game/gamepad";
 import { STAGE_MAP, STAGES, type StageId } from "@/game/stages";
 
 type Screen = "hatch" | "den" | "bracket" | "online" | "fight";
@@ -93,6 +94,9 @@ export function Rumble() {
     const saved = loadCareer();
     setCareer(saved);
     setScreen(saved ? "den" : "hatch");
+    const wake = () => unlockAudio();
+    window.addEventListener("gamepadconnected", wake);
+    return () => window.removeEventListener("gamepadconnected", wake);
   }, []);
 
   const you = career?.beast ?? "voltusk";
@@ -334,6 +338,9 @@ function Den({
         {skills.burst ? " Digivolve is in." : " Digivolve is locked."}
       </p>
       {hint ? <p className="text-sm text-gold">{hint}</p> : null}
+      <p className="text-sm text-muted">
+        DualShock, including the older pads: stick or D-pad moves, × jumps, □ light, △ heavy, ○ special, L1 shield, R1 digivolve. Press a face button once if the pad is quiet.
+      </p>
       <button type="button" disabled={!ready} onClick={onTrain} className="font-display min-h-12 bg-primary font-semibold text-bg disabled:opacity-50">
         {ready ? "Train" : "Loading beasts…"}
       </button>
@@ -772,7 +779,9 @@ function Fight({
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       acc += dt;
-      const local = gateSkills(combine(keyRef.current, touchRef.current), skillsRef.current);
+      const gp = readFightPad(safeGamepads());
+      if (padActive(gp)) unlockAudio();
+      const local = gateSkills(combine(combine(keyRef.current, touchRef.current), gp), skillsRef.current);
       const live = linkRef.current;
       let guard = 0;
       if (live?.role === "guest") {
@@ -928,9 +937,10 @@ function Fight({
       </div>
 
       {!touchUi && (
-        <p className="pointer-events-none absolute bottom-3 left-1/2 hidden -translate-x-1/2 text-center text-xs text-muted md:block">
-          {youBeast.light.tag} J · {skills.heavy ? youBeast.heavy.tag : "Heavy locked"} K · {skills.special ? youBeast.shot.tag : "Special locked"} L · W jump · S shield · {skills.burst ? "E digivolve" : "E locked"}
-        </p>
+        <div className="pointer-events-none absolute bottom-3 left-1/2 hidden w-[min(92vw,42rem)] -translate-x-1/2 text-center text-xs text-muted md:block">
+          <p>Stick left / right · × jump · □ {youBeast.light.tag} · △ {skills.heavy ? youBeast.heavy.tag : "heavy locked"} · ○ {skills.special ? youBeast.shot.tag : "special locked"} · L1 shield · {skills.burst ? "R1 digivolve" : "R1 locked"}</p>
+          <p className="mt-0.5 opacity-70">Keys A D · W jump · S shield · J K L · E digivolve</p>
+        </div>
       )}
 
       {touchUi && art && (
