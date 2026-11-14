@@ -1026,7 +1026,7 @@ export class MatchSim {
     attacker.meter = Math.min(100, attacker.meter + (h.kind === "heavy" ? 18 : h.kind === "special" ? 16 : 11));
     target.meter = Math.min(100, target.meter + 8);
     target.flash = 1;
-    this.impacts.push({ x: h.hx, y: h.hy, t: 0, life: 0.2, scale: h.kind === "heavy" ? 1.4 : 1 });
+    this.impacts.push({ x: h.hx, y: h.hy, t: 0, life: h.kind === "light" ? 0.28 : 0.4, scale: h.kind === "heavy" ? 1.7 : h.kind === "special" ? 1.45 : 1.15 });
 
     if (h.armored && !h.blocked) {
       this.hitstop = Math.max(this.hitstop, 0.04);
@@ -1064,8 +1064,9 @@ export class MatchSim {
     target.t = 0;
     target.armor = false;
     this.hitstop = Math.max(this.hitstop, h.kind === "heavy" ? 0.08 : 0.045);
-    this.trauma = Math.min(1, this.trauma + (h.kind === "heavy" ? 0.45 : 0.2));
-    this.puff(h.hx, h.hy, attacker.beast.accent, h.kind === "heavy" ? 14 : 8);
+    this.trauma = Math.min(1, this.trauma + (h.kind === "heavy" ? 0.55 : h.kind === "special" ? 0.4 : 0.28));
+    this.puff(h.hx, h.hy, attacker.beast.accent, h.kind === "heavy" ? 16 : 10, dir * 260, h.blocked ? 20 : 140);
+    this.puff(h.hx, h.hy, "#ffffff", h.kind === "light" ? 4 : 7, dir * 80, 40);
     this.floatText(h.hx, h.hy + 30, `${dmg}%`, edge > 0 ? "#ffd56a" : "#ffffff");
     if (h.kind === "heavy") sfx.crush();
     else if (h.blocked) sfx.block();
@@ -1110,18 +1111,18 @@ export class MatchSim {
     }
   }
 
-  private puff(x: number, y: number, color: string, n: number) {
+  private puff(x: number, y: number, color: string, n: number, biasX = 0, biasY = 40) {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
-      const s = 80 + Math.random() * 280;
+      const s = 90 + Math.random() * 340;
       this.sparks.push({
         x,
         y,
-        vx: Math.cos(a) * s,
-        vy: Math.sin(a) * s * 0.6 + 80,
-        life: 0.25 + Math.random() * 0.28,
-        max: 0.5,
-        size: 2 + Math.random() * 3.5,
+        vx: Math.cos(a) * s * 0.45 + biasX * (0.35 + Math.random() * 0.8),
+        vy: Math.sin(a) * s * 0.45 + biasY * (0.4 + Math.random()),
+        life: 0.28 + Math.random() * 0.32,
+        max: 0.55,
+        size: 3 + Math.random() * 4.5,
         color,
         text: "",
       });
@@ -1133,7 +1134,7 @@ export class MatchSim {
       x,
       y,
       vx: (Math.random() - 0.5) * 20,
-      vy: 110,
+      vy: 160,
       life: 0.7,
       max: 0.7,
       size: 0,

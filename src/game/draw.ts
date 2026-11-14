@@ -61,8 +61,9 @@ export function render(
 ) {
   const mag = shake ? sim.trauma * sim.trauma : 0;
   const t = performance.now();
-  const shx = Math.sin(t * 0.046) * 16 * mag;
-  const shy = Math.cos(t * 0.063) * 9 * mag;
+  const shx = Math.sin(t * 0.046) * 18 * mag;
+  const shy = Math.cos(t * 0.063) * 10 * mag;
+  const roll = Math.sin(t * 0.05) * 0.03 * mag;
   const scale = w / cam.viewW;
   const viewH = h / scale;
   const left = cam.x - cam.viewW / 2;
@@ -73,6 +74,12 @@ export function render(
   const stage = sim.stage;
   const span = stageSpan(stage);
   ctx.clearRect(0, 0, w, h);
+  ctx.save();
+  if (roll) {
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(roll);
+    ctx.translate(-w / 2, -h / 2);
+  }
   const sky = ctx.createLinearGradient(0, 0, 0, h);
   sky.addColorStop(0, stage.sky[0]);
   sky.addColorStop(0.55, stage.sky[1]);
@@ -101,22 +108,41 @@ export function render(
   for (const shot of sim.shots) drawShot(ctx, shot, art, sim, sx, sy, scale);
   for (const im of sim.impacts) drawImpact(ctx, im, art, sx, sy, scale);
   for (const s of sim.sparks) {
+    const alpha = Math.max(0, s.life / s.max);
     if (s.text) {
-      ctx.globalAlpha = Math.max(0, s.life / s.max);
-      ctx.fillStyle = s.color;
-      ctx.font = `${Math.round(18 * Math.min(scale, 1.4))}px "Chakra Petch", sans-serif`;
+      const pop = 1 + Math.sin(Math.min(1, 1 - s.life / s.max) * Math.PI) * 0.18;
+      const size = Math.round(22 * Math.min(scale, 1.5) * pop);
+      ctx.globalAlpha = alpha;
+      ctx.font = `700 ${size}px "Chakra Petch", sans-serif`;
       ctx.textAlign = "center";
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "rgba(4, 8, 18, 0.85)";
+      ctx.strokeText(s.text, sx(s.x), sy(s.y));
+      ctx.fillStyle = s.color;
       ctx.fillText(s.text, sx(s.x), sy(s.y));
       ctx.globalAlpha = 1;
     } else {
-      ctx.globalAlpha = Math.max(0, s.life / s.max);
-      ctx.fillStyle = s.color;
+      const x = sx(s.x);
+      const y = sy(s.y);
+      const px = sx(s.x - s.vx * 0.04);
+      const py = sy(s.y - s.vy * 0.04);
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = s.color;
+      ctx.lineCap = "round";
+      ctx.lineWidth = Math.max(2, s.size * scale * 0.55);
       ctx.beginPath();
-      ctx.arc(sx(s.x), sy(s.y), s.size * scale * 0.35, 0, Math.PI * 2);
+      ctx.moveTo(px, py);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      ctx.fillStyle = "#fff";
+      ctx.globalAlpha = alpha * 0.85;
+      ctx.beginPath();
+      ctx.arc(x, y, Math.max(1.5, s.size * scale * 0.22), 0, Math.PI * 2);
       ctx.fill();
       ctx.globalAlpha = 1;
     }
   }
+  ctx.restore();
 }
 
 function drawAbyss(
@@ -301,47 +327,46 @@ function drawFighter(
   if (f.burst > 0) {
     ctx.save();
     ctx.strokeStyle = f.beast.accent;
-    ctx.globalAlpha = 0.45 + Math.sin(performance.now() * 0.01) * 0.2;
-    ctx.lineWidth = 3;
+    ctx.shadowColor = f.beast.accent;
+    ctx.shadowBlur = 16;
+    ctx.globalAlpha = 0.55 + Math.sin(performance.now() * 0.012) * 0.2;
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.ellipse(feetX, feetY - 70 * scale, 48 * scale, 78 * scale, 0, 0, Math.PI * 2);
+    ctx.ellipse(feetX, feetY - 78 * scale, 54 * scale, 86 * scale, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
 
   if (f.action === "block") {
     ctx.save();
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = CYAN;
-    ctx.fillRect(feetX + f.facing * 10 * scale, feetY - 130 * scale, f.facing * 16 * scale, 100 * scale);
+    ctx.translate(feetX + f.facing * 28 * scale, feetY - 78 * scale);
+    ctx.strokeStyle = CYAN;
+    ctx.fillStyle = "rgba(46, 230, 255, 0.16)";
+    ctx.lineWidth = 3;
+    ctx.shadowColor = CYAN;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 22 * scale, 58 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
     ctx.restore();
   }
 
   if (f.burn > 0) {
     ctx.save();
     ctx.fillStyle = EMBER;
-    ctx.globalAlpha = 0.8;
-    const flicker = Math.sin(performance.now() * 0.02);
-    ctx.beginPath();
-    ctx.arc(feetX + flicker * 4, feetY - 90 * scale, 7 * scale, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.shadowColor = EMBER;
+    ctx.shadowBlur = 10;
+    const flicker = Math.sin(performance.now() * 0.03);
+    for (let i = 0; i < 3; i++) {
+      ctx.globalAlpha = 0.55 + i * 0.15;
+      ctx.beginPath();
+      ctx.arc(feetX + flicker * 6 + (i - 1) * 8 * scale, feetY - (70 + i * 16) * scale, (8 - i) * scale, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
-  if (f.action === "light" || f.action === "heavy") {
-    const mv = f.beast[f.action];
-    const active = f.t >= mv.startup && f.t <= mv.startup + mv.active + 0.05;
-    if (active) drawSlash(ctx, feetX, feetY, scale, f.facing, f.beast.accent, mv.shape);
-  }
-  if (f.action === "special" && f.beast.shot.form === "ram" && f.t < 0.4) {
-    ctx.save();
-    ctx.globalAlpha = 0.55;
-    ctx.fillStyle = f.beast.accent;
-    ctx.fillRect(feetX - f.facing * 80 * scale, feetY - 90 * scale, f.facing * 90 * scale, 70 * scale);
-    ctx.restore();
-  }
-
-  if (!fr) return;
   const contentH = Math.max(1, fr.maxY - fr.minY);
   const body = f.beast.body * (f.burst > 0 ? 1.16 : 1);
   const stretch = 1 + Math.max(-0.12, Math.min(0.16, -f.vy / 5200));
@@ -350,17 +375,18 @@ function drawFighter(
   const drawW = drawH * (fr.img.width / fr.img.height) * squash;
   const footPad = (fr.img.height - 1 - fr.maxY) * (drawH / fr.img.height);
   const dy = feetY - drawH + footPad;
-
   const spd = Math.hypot(f.vx, f.vy);
-  if (f.action === "hit" && spd > 680) {
+
+  if (f.action === "hit" && spd > 420) {
     ctx.save();
-    ctx.globalAlpha = Math.min(0.55, spd / 2800);
+    ctx.globalAlpha = Math.min(0.7, spd / 2400);
     ctx.strokeStyle = BONE;
-    ctx.lineWidth = 2;
-    const len = Math.min(78, spd * 0.035) * scale;
+    ctx.lineCap = "round";
+    const len = Math.min(110, spd * 0.05) * scale;
     const ang = Math.atan2(-f.vy, f.vx);
-    for (let i = 0; i < 3; i++) {
-      const oy = (50 + i * 18) * scale;
+    for (let i = 0; i < 4; i++) {
+      ctx.lineWidth = 3 - i * 0.4;
+      const oy = (36 + i * 22) * scale;
       ctx.beginPath();
       ctx.moveTo(feetX, feetY - oy);
       ctx.lineTo(feetX - Math.cos(ang) * len, feetY - oy + Math.sin(ang) * len);
@@ -369,24 +395,79 @@ function drawFighter(
     ctx.restore();
   }
 
-  ctx.save();
-  if (f.action === "ko") {
-    ctx.translate(feetX, feetY);
-    ctx.rotate(Math.min(1.15, phaseT * 2) * 0.9 * (f.facing > 0 ? 1 : -1));
-    ctx.translate(-feetX, -feetY);
+  const paintBody = (ox: number, alpha: number) => {
+    ctx.save();
+    ctx.translate(ox, 0);
+    if (f.action === "ko") {
+      ctx.translate(feetX, feetY);
+      ctx.rotate(Math.min(1.15, phaseT * 2) * 0.9 * (f.facing > 0 ? 1 : -1));
+      ctx.translate(-feetX, -feetY);
+    }
+    if (f.facing < 0) {
+      ctx.translate(feetX, 0);
+      ctx.scale(-1, 1);
+      ctx.translate(-feetX, 0);
+    }
+    ctx.globalAlpha = alpha * (f.invuln > 0 ? 0.55 + Math.sin(performance.now() / 55) * 0.3 : 1);
+    if (f.flash > 0.35 && ox === 0) ctx.filter = "brightness(3) saturate(0.15)";
+    if (f.burst > 0 && ox === 0) blitTint(ctx, fr, feetX - drawW / 2, dy, drawW, drawH, "#ffe7a3", 0.28);
+    else ctx.drawImage(fr.img, feetX - drawW / 2, dy, drawW, drawH);
+    ctx.restore();
+  };
+
+  const swinging = f.action === "light" || f.action === "heavy" || (f.action === "special" && f.beast.shot.form === "ram");
+  if (swinging) {
+    paintBody(-f.facing * 22 * scale, 0.22);
+    paintBody(-f.facing * 10 * scale, 0.4);
+  } else if (f.action === "hit" && spd > 700) {
+    paintBody(-f.vx * 0.012 * scale, 0.28);
   }
-  if (f.facing < 0) {
-    ctx.translate(feetX, 0);
-    ctx.scale(-1, 1);
-    ctx.translate(-feetX, 0);
+  paintBody(0, 1);
+
+  if (f.action === "light" || f.action === "heavy") {
+    const mv = f.beast[f.action];
+    const start = mv.startup;
+    const end = mv.startup + mv.active;
+    if (f.t >= start * 0.65 && f.t <= end + 0.08) {
+      const span = Math.max(0.05, end - start);
+      const progress = Math.max(0, Math.min(1, (f.t - start) / span));
+      drawSlash(ctx, feetX, feetY, scale, f.facing, f.beast.accent, mv.shape, progress, f.action === "heavy");
+    }
   }
-  const dx = feetX - drawW / 2;
-  if (f.invuln > 0) ctx.globalAlpha = 0.55 + Math.sin(performance.now() / 55) * 0.3;
-  if (f.flash > 0.35) ctx.filter = "brightness(2.6) saturate(0.2)";
-  if (f.burst > 0) blitTint(ctx, fr, dx, dy, drawW, drawH, "#ffe7a3", 0.28);
-  else ctx.drawImage(fr.img, dx, dy, drawW, drawH);
-  ctx.filter = "none";
-  ctx.restore();
+  if (f.action === "special" && f.beast.shot.form === "ram" && f.t < 0.42) {
+    const p = Math.min(1, f.t / 0.32);
+    ctx.save();
+    ctx.globalAlpha = 0.35 + (1 - p) * 0.4;
+    const grad = ctx.createLinearGradient(feetX - f.facing * 90 * scale, feetY, feetX + f.facing * 20 * scale, feetY);
+    grad.addColorStop(0, "transparent");
+    grad.addColorStop(1, f.beast.accent);
+    ctx.fillStyle = grad;
+    ctx.fillRect(feetX - f.facing * 100 * scale, feetY - 96 * scale, f.facing * 110 * scale, 78 * scale);
+    ctx.restore();
+  }
+
+  if (f.flash > 0.45 && f.action === "hit") {
+    const a = Math.min(1, (f.flash - 0.45) * 1.6);
+    ctx.save();
+    ctx.translate(feetX, feetY - 70 * scale);
+    ctx.strokeStyle = "#fff";
+    ctx.globalAlpha = a;
+    ctx.lineWidth = 3;
+    const radius = (18 + (1 - f.flash) * 70) * scale;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = f.beast.accent === CYAN ? EMBER : f.beast.accent;
+    ctx.globalAlpha = a * 0.8;
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2 + f.flash;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(ang) * radius * 0.35, Math.sin(ang) * radius * 0.35);
+      ctx.lineTo(Math.cos(ang) * radius, Math.sin(ang) * radius);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 }
 
 function drawSlash(
@@ -397,37 +478,52 @@ function drawSlash(
   facing: number,
   color: string,
   shape: string,
+  progress: number,
+  heavy: boolean,
 ) {
+  const grow = 0.55 + progress * 0.55;
   ctx.save();
   ctx.translate(x, y - 78 * scale);
   ctx.scale(facing, 1);
-  ctx.strokeStyle = color;
-  ctx.globalAlpha = 0.9;
   ctx.lineCap = "round";
-  ctx.lineWidth = (shape === "lance" || shape === "slam" ? 8 : 5) * scale;
+  ctx.lineJoin = "round";
+  const stroke = (width: number, alpha: number, style: string, blur: number) => {
+    ctx.save();
+    ctx.strokeStyle = style;
+    ctx.globalAlpha = alpha * (1 - progress * 0.25);
+    ctx.lineWidth = width * scale * (heavy ? 1.25 : 1);
+    ctx.shadowColor = color;
+    ctx.shadowBlur = blur;
+    ctx.stroke();
+    ctx.restore();
+  };
   ctx.beginPath();
   if (shape === "upper") {
-    ctx.arc(-8 * scale, 10 * scale, 46 * scale, 0.4, 2.4);
+    ctx.arc(-8 * scale, 8 * scale, 62 * scale * grow, 0.2, 2.5);
   } else if (shape === "lance") {
-    ctx.moveTo(10 * scale, 6 * scale);
-    ctx.lineTo(120 * scale, 4 * scale);
+    ctx.moveTo(8 * scale, 4 * scale);
+    ctx.lineTo((40 + 110 * grow) * scale, 2 * scale);
   } else if (shape === "nova") {
-    ctx.arc(0, 20 * scale, 70 * scale, 0, Math.PI * 2);
+    ctx.arc(0, 16 * scale, (36 + 58 * grow) * scale, 0, Math.PI * 2);
   } else if (shape === "sweep") {
-    ctx.arc(16 * scale, 28 * scale, 78 * scale, -0.4, 0.7);
+    ctx.arc(10 * scale, 30 * scale, 92 * scale * grow, -0.55, 0.85);
   } else if (shape === "slam") {
-    ctx.arc(8 * scale, -20 * scale, 50 * scale, 0.2, 2.2);
+    ctx.arc(6 * scale, -16 * scale, 64 * scale * grow, 0.05, 2.4);
   } else if (shape === "claw") {
-    ctx.moveTo(16 * scale, -16 * scale);
-    ctx.lineTo(54 * scale, 10 * scale);
-    ctx.moveTo(22 * scale, 8 * scale);
-    ctx.lineTo(60 * scale, 28 * scale);
+    ctx.moveTo(12 * scale, -22 * scale);
+    ctx.quadraticCurveTo(40 * scale, -4 * scale, (36 + 48 * grow) * scale, 8 * scale);
+    ctx.moveTo(18 * scale, 2 * scale);
+    ctx.quadraticCurveTo(48 * scale, 16 * scale, (40 + 46 * grow) * scale, 34 * scale);
+    ctx.moveTo(22 * scale, 22 * scale);
+    ctx.quadraticCurveTo(50 * scale, 34 * scale, (34 + 40 * grow) * scale, 52 * scale);
   } else if (shape === "guard") {
-    ctx.arc(18 * scale, 8 * scale, 28 * scale, -1, 1);
+    ctx.arc(20 * scale, 6 * scale, 34 * scale * grow, -1.2, 1.2);
   } else {
-    ctx.arc(16 * scale, 0, 36 * scale, -0.9, 0.9);
+    ctx.arc(12 * scale, 4 * scale, (28 + 28 * grow) * scale, -1.05, 1.05);
   }
-  ctx.stroke();
+  stroke(heavy ? 16 : 12, 0.28, color, 18);
+  stroke(heavy ? 7 : 5, 0.95, color, 8);
+  stroke(2.2, 0.95, "#f4fbff", 0);
   ctx.restore();
 }
 
@@ -472,21 +568,46 @@ function drawShot(
   if (shot.form === "lob") {
     ctx.fillStyle = color;
     ctx.shadowColor = color;
-    ctx.shadowBlur = 18;
+    ctx.shadowBlur = 22;
     ctx.beginPath();
-    ctx.arc(x, y, shot.w * scale * 0.38, 0, Math.PI * 2);
+    ctx.arc(x, y, shot.w * scale * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#fff6d8";
+    ctx.beginPath();
+    ctx.arc(x - 3, y - 3, shot.w * scale * 0.16, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
     return;
   }
   if (shot.form === "beam") {
-    ctx.fillStyle = color;
-    ctx.globalAlpha = 0.85;
     const len = shot.w * scale;
-    ctx.fillRect(shot.vx < 0 ? x - len : x, y - 4 * scale, len, 8 * scale);
+    const left = shot.vx < 0 ? x - len : x;
+    const grad = ctx.createLinearGradient(left, y, left + len, y);
+    grad.addColorStop(0, "transparent");
+    grad.addColorStop(0.2, color);
+    grad.addColorStop(1, "#ffffff");
+    ctx.fillStyle = grad;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 16;
+    ctx.globalAlpha = 0.9;
+    ctx.fillRect(left, y - 7 * scale, len, 14 * scale);
+    ctx.fillStyle = "#fff";
+    ctx.globalAlpha = 0.85;
+    ctx.fillRect(left, y - 2 * scale, len, 4 * scale);
     ctx.restore();
     return;
   }
+  const tx = sx(shot.x - shot.vx * 0.05);
+  const ty = sy(shot.y + shot.h * 0.3 - shot.vy * 0.05);
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = 0.55;
+  ctx.lineWidth = shot.w * scale * 0.35;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(tx, ty);
+  ctx.lineTo(x, y);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
   const frames = art.bolt;
   const idx = Math.floor((1 - shot.life / shot.max) * frames.length) % frames.length;
   const fr = frames[idx] ?? frames[0];
@@ -516,9 +637,20 @@ function drawImpact(
   const frames = art.impact;
   const idx = Math.min(frames.length - 1, Math.floor((im.t / im.life) * frames.length));
   const fr = frames[idx];
+  const cx = sx(im.x);
+  const cy = sy(im.y);
+  const fade = 1 - im.t / im.life;
+  ctx.save();
+  ctx.globalAlpha = fade * 0.85;
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(cx, cy, (16 + im.t * 220) * scale * im.scale, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
   if (!fr) return;
-  const size = 90 * scale * im.scale;
-  ctx.globalAlpha = 1 - im.t / im.life;
-  ctx.drawImage(fr.img, sx(im.x) - size / 2, sy(im.y) - size / 2, size, size);
+  const size = 110 * scale * im.scale * (0.8 + im.t / im.life);
+  ctx.globalAlpha = fade;
+  ctx.drawImage(fr.img, cx - size / 2, cy - size / 2, size, size);
   ctx.globalAlpha = 1;
 }
